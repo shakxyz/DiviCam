@@ -11,6 +11,7 @@ import android.util.Log
 object ImageProcessor {
 
     fun combineImages(front: Bitmap, back: Bitmap): Bitmap {
+        // Target width will be normalized to front image width
         val targetWidth = front.width
         
         // Scale back aspect-ratio-proportionally to match the front width
@@ -18,8 +19,8 @@ object ImageProcessor {
         val scaledBackHeight = (back.height * scaleFactorBack).toInt()
         val scaledBack = Bitmap.createScaledBitmap(back, targetWidth, scaledBackHeight, true)
 
-        // A very clean, minimal 4px separator block
-        val dividerHeight = 4
+        // Clean modern separator line
+        val dividerHeight = 6
         val totalHeight = front.height + dividerHeight + scaledBack.height
 
         val combined = Bitmap.createBitmap(targetWidth, totalHeight, Bitmap.Config.ARGB_8888)
@@ -28,9 +29,9 @@ object ImageProcessor {
         // 1. Draw Front on top
         canvas.drawBitmap(front, 0f, 0f, null)
 
-        // 2. Draw 4px divider background (classic clear separator boundary line)
+        // 2. Draw modern separator line
         val dividerPaint = Paint().apply {
-            color = Color.parseColor("#121212")
+            color = Color.parseColor("#0F172A")
             style = Paint.Style.FILL
         }
         canvas.drawRect(
@@ -58,29 +59,51 @@ object ImageProcessor {
         showCoords: Boolean,
         showAddress: Boolean,
         showMiniMap: Boolean = false,
-        miniMapOpacity: Float = 0.7f,
+        miniMapOpacity: Float = 0.65f,
         latitude: Double? = null,
         longitude: Double? = null,
-        miniMapPositionName: String = "Top-right"
+        miniMapPositionName: String = "Top-right",
+        enableAllStamps: Boolean = true,
+        showBrandingBadge: Boolean = true,
+        mapBorderEnabled: Boolean = false,
+        mapTransparentBg: Boolean = true,
+        stampBgOpacity: Float = 0.45f,
+        stampBorderEnabled: Boolean = false
     ): Bitmap {
+        // If master stamp switch is disabled, return clean unedited photo
+        if (!enableAllStamps) {
+            return image
+        }
+
         val workingBitmap = image.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = Canvas(workingBitmap)
         val width = workingBitmap.width
         val height = workingBitmap.height
 
-        // Calculate dynamic sizes based on width (scale-independent relative size ~1.5%)
-        val baseSize = (width * 0.016f).coerceAtLeast(24f) // ~1.6% width
-        val largeTextSize = baseSize * 1.2f // For date/time
-        val regularTextSize = baseSize * 0.9f // For GPS & custom text
+        // Calculate dynamic sizes based on width (~1.6% width)
+        val baseSize = (width * 0.016f).coerceAtLeast(24f)
+        val largeTextSize = baseSize * 1.25f // For date/time
+        val regularTextSize = baseSize * 0.95f // For GPS & custom text
+        val badgeTextSize = baseSize * 0.78f // For DiviCam branding badge
 
         val colorValue = when (textColorName.lowercase()) {
-            "yellow" -> Color.parseColor("#FFD600")
+            "cyan" -> Color.parseColor("#38BDF8")
+            "yellow" -> Color.parseColor("#FDE047")
+            "gold" -> Color.parseColor("#F59E0B")
             "black" -> Color.BLACK
-            "red" -> Color.parseColor("#D50000")
+            "red" -> Color.parseColor("#EF4444")
             else -> Color.WHITE
         }
 
         // Prepare paint objects
+        val badgePaint = Paint().apply {
+            color = Color.parseColor("#38BDF8") // Vibrant Cyan for brand tag
+            textSize = badgeTextSize
+            isAntiAlias = true
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            letterSpacing = 0.06f
+        }
+
         val titlePaint = Paint().apply {
             color = colorValue
             textSize = regularTextSize
@@ -104,12 +127,18 @@ object ImageProcessor {
 
         // Gather lines of text to draw
         val lines = mutableListOf<Pair<String, Paint>>()
+
+        if (showBrandingBadge) {
+            lines.add(Pair("DIVICAM • divicam.app", badgePaint))
+        }
         
         if (customText.isNotEmpty()) {
             lines.add(Pair(customText, titlePaint))
         }
         
-        lines.add(Pair(timestamp, datePaint))
+        if (timestamp.isNotEmpty()) {
+            lines.add(Pair(timestamp, datePaint))
+        }
 
         if (showAddress && gpsAddress.isNotEmpty()) {
             lines.add(Pair(gpsAddress, gpsPaint))
@@ -125,7 +154,7 @@ object ImageProcessor {
         // Calculate geometry
         val paddingX = baseSize * 1.0f
         val paddingY = baseSize * 0.8f
-        val lineSpacing = baseSize * 0.4f
+        val lineSpacing = baseSize * 0.38f
 
         var maxLineWidth = 0f
         var totalTextHeight = 0f
@@ -150,7 +179,7 @@ object ImageProcessor {
 
         val mapSize = (width * 0.18f).coerceAtLeast(180f) // map is 18% of photo width
 
-        // 1. Draw Text Watermark PILL (if there are lines to draw)
+        // 1. Draw Text Watermark PILL
         if (lines.isNotEmpty()) {
             val adjustedRectWidth = maxLineWidth + (paddingX * 2)
             val adjustedRectHeight = totalTextHeight + (paddingY * 2)
@@ -159,7 +188,6 @@ object ImageProcessor {
             val rectLeft: Float
             val rectTop: Float
 
-            // Calculate position of text watermark pill based on positionName
             when (positionName) {
                 "Top-left" -> {
                     rectLeft = margin
@@ -179,13 +207,26 @@ object ImageProcessor {
                 }
             }
 
-            val bgPaint = Paint().apply {
-                color = Color.parseColor("#99000000") // 60% opacity black
-                style = Paint.Style.FILL
-                isAntiAlias = true
+            val alphaInt = (stampBgOpacity * 255).toInt().coerceIn(0, 255)
+            if (alphaInt > 0) {
+                val bgPaint = Paint().apply {
+                    color = Color.argb(alphaInt, 15, 23, 42) // Dark midnight glass
+                    style = Paint.Style.FILL
+                    isAntiAlias = true
+                }
+                val bgRect = RectF(rectLeft, rectTop, rectLeft + adjustedRectWidth, rectTop + adjustedRectHeight)
+                canvas.drawRoundRect(bgRect, baseSize * 0.5f, baseSize * 0.5f, bgPaint)
+
+                if (stampBorderEnabled) {
+                    val borderPaint = Paint().apply {
+                        color = Color.argb(40, 255, 255, 255)
+                        style = Paint.Style.STROKE
+                        strokeWidth = 2f
+                        isAntiAlias = true
+                    }
+                    canvas.drawRoundRect(bgRect, baseSize * 0.5f, baseSize * 0.5f, borderPaint)
+                }
             }
-            val bgRect = RectF(rectLeft, rectTop, rectLeft + adjustedRectWidth, rectTop + adjustedRectHeight)
-            canvas.drawRoundRect(bgRect, baseSize * 0.5f, baseSize * 0.5f, bgPaint)
 
             // Draw each line inside the container
             var currentY = rectTop + paddingY
@@ -198,7 +239,7 @@ object ImageProcessor {
             }
         }
 
-        // 2. Draw Separate MiniMap PILL (if showMiniMap is true and GPS coordinates exist)
+        // 2. Draw Separate MiniMap
         if (showMiniMap && latitude != null && longitude != null) {
             val margin = width * 0.03f
             val mapContainerWidth = mapSize + (paddingX * 2)
@@ -207,7 +248,6 @@ object ImageProcessor {
             val mapContainerLeft: Float
             val mapContainerTop: Float
 
-            // Choose independent corner for the stamped map
             when (miniMapPositionName) {
                 "Top-left" -> {
                     mapContainerLeft = margin
@@ -221,38 +261,34 @@ object ImageProcessor {
                     mapContainerLeft = width - mapContainerWidth - margin
                     mapContainerTop = height - mapContainerHeight - margin
                 }
-                else -> { // Default "Bottom-left" or whatever is chosen
+                else -> {
                     mapContainerLeft = margin
                     mapContainerTop = height - mapContainerHeight - margin
                 }
             }
 
-            val bgPaint = Paint().apply {
-                color = Color.parseColor("#99000000") // 60% opacity black
-                style = Paint.Style.FILL
-                isAntiAlias = true
+            val mapAlphaInt = if (mapTransparentBg) {
+                (stampBgOpacity * 255).toInt().coerceIn(0, 255)
+            } else {
+                200
             }
-            val mapContainerRect = RectF(mapContainerLeft, mapContainerTop, mapContainerLeft + mapContainerWidth, mapContainerTop + mapContainerHeight)
-            canvas.drawRoundRect(mapContainerRect, baseSize * 0.5f, baseSize * 0.5f, bgPaint)
+
+            if (mapAlphaInt > 0) {
+                val bgPaint = Paint().apply {
+                    color = Color.argb(mapAlphaInt, 15, 23, 42)
+                    style = Paint.Style.FILL
+                    isAntiAlias = true
+                }
+                val mapContainerRect = RectF(mapContainerLeft, mapContainerTop, mapContainerLeft + mapContainerWidth, mapContainerTop + mapContainerHeight)
+                canvas.drawRoundRect(mapContainerRect, baseSize * 0.5f, baseSize * 0.5f, bgPaint)
+            }
 
             val mapLeft = mapContainerLeft + paddingX
             val mapTop = mapContainerTop + paddingY
             val mapRight = mapLeft + mapSize
             val mapBottom = mapTop + mapSize
 
-            val mapBorderPaint = Paint().apply {
-                color = Color.parseColor("#26FFFFFF")
-                style = Paint.Style.STROKE
-                strokeWidth = 2f
-                isAntiAlias = true
-            }
-            val mapBgPaint = Paint().apply {
-                color = Color.parseColor("#121212")
-                style = Paint.Style.FILL
-                isAntiAlias = true
-            }
             val mapRect = RectF(mapLeft, mapTop, mapRight, mapBottom)
-            canvas.drawRoundRect(mapRect, baseSize * 0.3f, baseSize * 0.3f, mapBgPaint)
 
             val mapTile = fetchMapTile(latitude, longitude)
             val mapAlphaPaint = Paint().apply {
@@ -270,9 +306,9 @@ object ImageProcessor {
                 val scaledTile = Bitmap.createScaledBitmap(mapTile, mapSize.toInt(), mapSize.toInt(), true)
                 canvas.drawBitmap(scaledTile, mapLeft, mapTop, mapAlphaPaint)
             } else {
-                // High-fidelity fallback blue digital/radar aesthetic grid
+                // High-fidelity fallback blue digital/radar GPS grid
                 val circlePaint = Paint().apply {
-                    color = Color.parseColor("#4D1A73E8")
+                    color = Color.parseColor("#4D38BDF8")
                     style = Paint.Style.STROKE
                     strokeWidth = 2f
                     isAntiAlias = true
@@ -287,7 +323,7 @@ object ImageProcessor {
                 canvas.drawLine(centerValX, mapTop, centerValX, mapBottom, circlePaint)
 
                 val textPaint = Paint().apply {
-                    color = Color.parseColor("#991A73E8")
+                    color = Color.parseColor("#9938BDF8")
                     textSize = mapSize * 0.08f
                     isAntiAlias = true
                 }
@@ -295,14 +331,14 @@ object ImageProcessor {
                 canvas.drawText("E", mapRight - (mapSize * 0.12f), centerValY + (mapSize * 0.025f), textPaint)
             }
 
-            // Continuous target center ring & beacon dot
+            // Target center ring & beacon dot in DiviCam Cyan
             val targetPaint = Paint().apply {
-                color = Color.parseColor("#FF1A73E8")
+                color = Color.parseColor("#FF38BDF8")
                 style = Paint.Style.FILL
                 isAntiAlias = true
             }
             val targetRingPaint = Paint().apply {
-                color = Color.parseColor("#FF1A73E8")
+                color = Color.parseColor("#8038BDF8")
                 style = Paint.Style.STROKE
                 strokeWidth = 3f
                 isAntiAlias = true
@@ -311,10 +347,20 @@ object ImageProcessor {
             val centerValX = mapLeft + mapSize / 2f
             val centerValY = mapTop + mapSize / 2f
             canvas.drawCircle(centerValX, centerValY, baseSize * 0.4f, targetRingPaint)
-            canvas.drawCircle(centerValX, centerValY, baseSize * 0.15f, targetPaint)
+            canvas.drawCircle(centerValX, centerValY, baseSize * 0.16f, targetPaint)
 
             canvas.restore()
-            canvas.drawRoundRect(mapRect, baseSize * 0.3f, baseSize * 0.3f, mapBorderPaint)
+
+            // Draw border only if user explicitly enabled it
+            if (mapBorderEnabled) {
+                val mapBorderPaint = Paint().apply {
+                    color = Color.parseColor("#40FFFFFF")
+                    style = Paint.Style.STROKE
+                    strokeWidth = 2f
+                    isAntiAlias = true
+                }
+                canvas.drawRoundRect(mapRect, baseSize * 0.3f, baseSize * 0.3f, mapBorderPaint)
+            }
         }
 
         return workingBitmap
@@ -322,22 +368,23 @@ object ImageProcessor {
 
     private fun fetchMapTile(lat: Double, lng: Double): Bitmap? {
         try {
-            val zoom = 14
+            val zoom = 15
             val x = ((lng + 180.0) / 360.0 * (1 shl zoom)).toInt()
             val latRad = lat * Math.PI / 180.0
             val y = ((1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0 * (1 shl zoom)).toInt()
             
-            val urlStr = "https://basemaps.cartocdn.com/rastertiles/voyager/$zoom/$x/$y.png"
+            // Standard OpenStreetMap tiles - Free, public, no API key required
+            val urlStr = "https://tile.openstreetmap.org/$zoom/$x/$y.png"
             val url = java.net.URL(urlStr)
             val connection = url.openConnection() as java.net.HttpURLConnection
             connection.connectTimeout = 3000
             connection.readTimeout = 3000
-            connection.setRequestProperty("User-Agent", "DiviCam/1.0 (Android)")
+            connection.setRequestProperty("User-Agent", "DiviCam/1.0 (Android; contact: mail@shak.xyz)")
             connection.inputStream.use { stream ->
                 return android.graphics.BitmapFactory.decodeStream(stream)
             }
         } catch (e: Exception) {
-            Log.e("ImageProcessor", "Failed to fetch map tile: ${e.message}")
+            Log.d("ImageProcessor", "Map tile download skipped or unavailable: ${e.message}")
         }
         return null
     }
@@ -372,7 +419,6 @@ object ImageProcessor {
         val imgWidth = boxWidth / scale
         val imgHeight = boxHeight / scale
 
-        // Clamp
         val x = imgLeft.toInt().coerceIn(0, bitmap.width - 1)
         val y = imgTop.toInt().coerceIn(0, bitmap.height - 1)
         val w = imgWidth.toInt().coerceIn(1, bitmap.width - x)

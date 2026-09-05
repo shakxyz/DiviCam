@@ -2,10 +2,10 @@ package com.example.ui.preview
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,13 +20,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.PlayCircleFilled
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -44,7 +44,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -71,24 +70,30 @@ fun PreviewScreen(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = Color(0xFF0D0D0D),
+        containerColor = Color(0xFF070C18),
         topBar = {
             TopAppBar(
-                title = { Text("Capture Saved Successful", fontWeight = FontWeight.Bold, color = Color.White) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("DiviCam Captured Media", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 18.sp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(imageVector = Icons.Default.Verified, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                    }
+                },
                 navigationIcon = {
                     IconButton(
                         onClick = onDone,
                         modifier = Modifier.testTag("preview_back_button")
                     ) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Navigate back to live camera view",
                             tint = Color.White
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF0D0D0D)
+                    containerColor = Color(0xFF070C18)
                 )
             )
         }
@@ -97,25 +102,24 @@ fun PreviewScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(Color(0xFF0D0D0D))
-                .padding(20.dp),
+                .background(Color(0xFF070C18))
+                .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Main media card container slot
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF121212)),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)), RoundedCornerShape(16.dp)),
+                    .border(BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.25f)), RoundedCornerShape(16.dp)),
             ) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     if (isVideo) {
-                        // Styled Video Thumbnail display
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
@@ -123,12 +127,11 @@ fun PreviewScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.PlayCircleFilled,
-                                contentDescription = "Video file indicator icon",
-                                tint = Color(0xFF1A73E8),
+                                contentDescription = "Play video",
+                                tint = Color(0xFF38BDF8),
                                 modifier = Modifier
                                     .size(80.dp)
                                     .clickable {
-                                        // Open standard device video player intents for safety
                                         try {
                                             val playIntent = Intent(Intent.ACTION_VIEW).apply {
                                                 setDataAndType(fileUri, "video/mp4")
@@ -149,17 +152,16 @@ fun PreviewScreen(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Saved directly under Movies/DiviCam gallery. Tap play icon above to preview on player.",
-                                color = Color(0xFF9E9E9E),
+                                text = "Saved directly under Movies/DiviCam. Tap play icon above to preview on player.",
+                                color = Color(0xFF94A3B8),
                                 fontSize = 13.sp,
                                 textAlign = TextAlign.Center
                             )
                         }
                     } else {
-                        // Double sided custom scaled Image viewer
                         AsyncImage(
                             model = fileUri,
-                            contentDescription = "Saved combined stamped ID card",
+                            contentDescription = "Saved stamped photo",
                             contentScale = ContentScale.Fit,
                             modifier = Modifier
                                 .fillMaxSize()
@@ -167,14 +169,14 @@ fun PreviewScreen(
                         )
                     }
 
-                    // Floating auto saved dynamic indicator tag
+                    // Floating auto-saved dynamic indicator tag
                     Surface(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(16.dp),
+                            .padding(14.dp),
                         shape = RoundedCornerShape(20.dp),
-                        color = Color.White.copy(alpha = 0.08f),
-                        border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.4f))
+                        color = Color(0xCC0F172A),
+                        border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.6f))
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -182,13 +184,13 @@ fun PreviewScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "Check active",
-                                tint = Color(0xFF00E676),
+                                contentDescription = "Saved indicator",
+                                tint = Color(0xFF10B981),
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Auto-Saved to Gallery",
+                                text = "Saved to Gallery",
                                 color = Color.White,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
@@ -198,14 +200,14 @@ fun PreviewScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Action shares & done control columns
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Share with other apps sheet launcher
+                // Share with other apps
                 OutlinedButton(
                     onClick = {
                         val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -217,55 +219,55 @@ fun PreviewScreen(
                     },
                     modifier = Modifier
                         .weight(1f)
-                        .height(50.dp)
+                        .height(48.dp)
                         .testTag("share_file_button"),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = Color.White
                     ),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
                 ) {
-                    Icon(imageVector = Icons.Default.Share, contentDescription = "Share media file sheet")
+                    Icon(imageVector = Icons.Default.Share, contentDescription = "Share", tint = Color(0xFF38BDF8))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Share", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Share", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 }
 
-                // Retake All button -> Restarts camera step flow from scratch
+                // Retake All button
                 OutlinedButton(
                     onClick = onRetakeAll,
                     modifier = Modifier
                         .weight(1f)
-                        .height(50.dp)
+                        .height(48.dp)
                         .testTag("retake_all_button"),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = Color.White
                     ),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
                 ) {
-                    Icon(imageVector = Icons.Default.Refresh, contentDescription = "Reset camera flow")
+                    Icon(imageVector = Icons.Default.Refresh, contentDescription = "Reset camera flow", tint = Color(0xFF38BDF8))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Retake All", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Retake", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Complete Flow Done Home Screen button
+            // Done Button
             Button(
                 onClick = onDone,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp)
+                    .height(50.dp)
                     .testTag("done_home_button"),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF1A73E8)
+                    containerColor = Color(0xFF0284C7)
                 )
             ) {
-                Icon(imageVector = Icons.Default.Done, contentDescription = "Done, close preview flow", tint = Color.White)
+                Icon(imageVector = Icons.Default.Done, contentDescription = "Done", tint = Color.White)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Done", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text("Done", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
         }
     }
