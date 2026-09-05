@@ -1,0 +1,6 @@
+{
+  "name": "DiviCam",
+  "description": "DiviCam - High-performance dual-side photo and document camera with automated GPS, address, timestamp, and visual verification.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
