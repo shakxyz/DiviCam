@@ -12,13 +12,21 @@ import java.io.File
 
 class GalleryRepository(private val context: Context) {
 
-    suspend fun saveBitmapToGallery(bitmap: Bitmap, quality: Int, customName: String? = null): Uri? = withContext(Dispatchers.IO) {
-        val finalQuality = quality.coerceIn(60, 100)
-        val filename = customName ?: "DiviCam_${System.currentTimeMillis()}.jpg"
+    suspend fun saveBitmapToGallery(
+        bitmap: Bitmap,
+        quality: Int,
+        customName: String? = null,
+        format: String = "WebP"
+    ): Uri? = withContext(Dispatchers.IO) {
+        val isWebP = format.equals("webp", ignoreCase = true)
+        val ext = if (isWebP) "webp" else "jpg"
+        val mime = if (isWebP) "image/webp" else "image/jpeg"
+        val finalQuality = quality.coerceIn(50, 100)
+        val filename = customName ?: "DiviCam_${System.currentTimeMillis()}.$ext"
         
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, filename)
-            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Images.Media.MIME_TYPE, mime)
             put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/DiviCam")
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                 put(MediaStore.Images.Media.IS_PENDING, 1)
@@ -32,9 +40,19 @@ class GalleryRepository(private val context: Context) {
         if (uri != null) {
             try {
                 contentResolver.openOutputStream(uri)?.use { stream ->
-                    val success = bitmap.compress(Bitmap.CompressFormat.JPEG, finalQuality, stream)
+                    val compressFormat = if (isWebP) {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                            Bitmap.CompressFormat.WEBP_LOSSY
+                        } else {
+                            @Suppress("DEPRECATION")
+                            Bitmap.CompressFormat.WEBP
+                        }
+                    } else {
+                        Bitmap.CompressFormat.JPEG
+                    }
+                    val success = bitmap.compress(compressFormat, finalQuality, stream)
                     if (!success) {
-                        Log.e("GalleryRepository", "Failed to compress bitmap")
+                        Log.e("GalleryRepository", "Failed to compress bitmap as $format")
                     }
                 }
                 

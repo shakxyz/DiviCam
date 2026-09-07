@@ -35,7 +35,17 @@ class SettingsManager(context: Context) {
         const val KEY_STAMP_BORDER_ENABLED = "stamp_border_enabled"
         const val KEY_SHOW_BRANDING_BADGE = "show_branding_badge"
         const val KEY_FLASH_MODE = "flash_mode"
+        const val KEY_IMAGE_FORMAT = "image_format"
+        const val KEY_IMAGE_RESOLUTION = "image_resolution"
     }
+
+    var imageFormat: String
+        get() = prefs.getString(KEY_IMAGE_FORMAT, "WebP") ?: "WebP"
+        set(value) = prefs.edit().putString(KEY_IMAGE_FORMAT, value).apply()
+
+    var imageResolution: String
+        get() = prefs.getString(KEY_IMAGE_RESOLUTION, "Standard") ?: "Standard"
+        set(value) = prefs.edit().putString(KEY_IMAGE_RESOLUTION, value).apply()
 
     var enableAllStamps: Boolean
         get() = prefs.getBoolean(KEY_ENABLE_ALL_STAMPS, true)
@@ -156,4 +166,6 @@ class SettingsManager(context: Context) {
     fun getAllCoordPrefixes(): List<String> = listOf("GPS", "LAT/LON", "COORD", "None")
     fun getAllAltitudeUnits(): List<String> = listOf("Meters (m)", "Feet (ft)")
     fun getAllPrecisions(): List<Int> = listOf(2, 4, 5, 6)
+    fun getAllImageFormats(): List<String> = listOf("WebP", "JPEG")
+    fun getAllResolutions(): List<String> = listOf("Standard", "High", "Full Sensor")
 }

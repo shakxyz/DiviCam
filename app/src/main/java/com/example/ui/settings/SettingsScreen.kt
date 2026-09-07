@@ -103,6 +103,8 @@ fun SettingsScreen(
     var stampBackgroundOpacity by remember { mutableFloatStateOf(settingsManager.stampBackgroundOpacity) }
     var stampBorderEnabled by remember { mutableStateOf(settingsManager.stampBorderEnabled) }
     var showBrandingBadge by remember { mutableStateOf(settingsManager.showBrandingBadge) }
+    var imageFormat by remember { mutableStateOf(settingsManager.imageFormat) }
+    var imageResolution by remember { mutableStateOf(settingsManager.imageResolution) }
 
     // Dropdown toggle states
     var posExpanded by remember { mutableStateOf(false) }
@@ -1384,6 +1386,68 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    // Image Output Format (WebP vs JPEG)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Output Image Format", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            Text("WebP produces small file size with crisp clarity.", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF1E293B))
+                                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                .clickable {
+                                    val nextVal = if (imageFormat == "WEBP") "JPEG" else "WEBP"
+                                    settingsManager.imageFormat = nextVal
+                                    imageFormat = nextVal
+                                }
+                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                                .testTag("button_image_format")
+                        ) {
+                            Text(imageFormat, color = Color(0xFF38BDF8), fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // Camera Resolution Limit
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Max Camera Resolution", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Prevent bloated megapixels and keep output snappy.", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF1E293B))
+                                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                .clickable {
+                                    val nextVal = when (imageResolution) {
+                                        "1080p" -> "1440p"
+                                        "1440p" -> "Original"
+                                        else -> "1080p"
+                                    }
+                                    settingsManager.imageResolution = nextVal
+                                    imageResolution = nextVal
+                                }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                .testTag("button_image_resolution")
+                        ) {
+                            Text(imageResolution, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

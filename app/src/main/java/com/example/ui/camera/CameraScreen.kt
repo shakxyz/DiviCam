@@ -9,6 +9,7 @@ import android.graphics.Matrix
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
+import android.view.OrientationEventListener
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -126,14 +127,15 @@ fun CameraScreen(
 
     // Local UI states
     var flashState by remember { mutableStateOf(viewModel.settings.flashMode) }
+    var lensFacing by remember { mutableStateOf(CameraSelector.LENS_FACING_BACK) }
     var isCameraFallback by remember { mutableStateOf(false) }
     var showCombineDialog by remember { mutableStateOf(false) }
     var activeCamera by remember { mutableStateOf<androidx.camera.core.Camera?>(null) }
 
-    // PreviewView for CameraX
+    // PreviewView for CameraX: FIT_CENTER ensures 100% of the camera feed matches the screen preview with zero cropped borders
     val previewView = remember {
         PreviewView(context).apply {
-            scaleType = PreviewView.ScaleType.FILL_CENTER
+            scaleType = PreviewView.ScaleType.FIT_CENTER
         }
     }
 
@@ -142,6 +144,32 @@ fun CameraScreen(
         ImageCapture.Builder()
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
             .build()
+    }
+
+    // Dynamic phone flip / rotation tracking
+    val orientationEventListener = remember {
+        object : OrientationEventListener(context) {
+            override fun onOrientationChanged(orientation: Int) {
+                if (orientation == ORIENTATION_UNKNOWN) return
+                val rotation = when (orientation) {
+                    in 45..134 -> android.view.Surface.ROTATION_270
+                    in 135..224 -> android.view.Surface.ROTATION_180
+                    in 225..314 -> android.view.Surface.ROTATION_90
+                    else -> android.view.Surface.ROTATION_0
+                }
+                try {
+                    imageCapture.targetRotation = rotation
+                } catch (e: Exception) {
+                    // Ignore target rotation update if not yet bound
+                }
+            }
+        }
+    }
+    DisposableEffect(orientationEventListener) {
+        orientationEventListener.enable()
+        onDispose {
+            orientationEventListener.disable()
+        }
     }
 
     // Navigation trigger when capture/combine is finished
@@ -188,8 +216,8 @@ fun CameraScreen(
         flashState = viewModel.settings.flashMode
     }
 
-    // Bind and Unbind CameraX when cameraMode changes
-    LaunchedEffect(cameraMode, cameraPermissionGranted) {
+    // Bind and Unbind CameraX when cameraMode, permissions, or lensFacing change
+    LaunchedEffect(cameraMode, cameraPermissionGranted, lensFacing) {
         if (!cameraPermissionGranted) return@LaunchedEffect
 
         try {
@@ -200,6 +228,8 @@ fun CameraScreen(
                 it.setSurfaceProvider(previewView.surfaceProvider)
             }
 
+            val requestedSelector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
+            val hasRequested = cameraProvider.hasCamera(requestedSelector)
             val backAvailable = cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA)
             val frontAvailable = cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)
 
@@ -207,7 +237,14 @@ fun CameraScreen(
                 isCameraFallback = true
                 activeCamera = null
             } else {
-                val cameraSelector = if (backAvailable) CameraSelector.DEFAULT_BACK_CAMERA else CameraSelector.DEFAULT_FRONT_CAMERA
+                val cameraSelector = if (hasRequested) {
+                    requestedSelector
+                } else if (backAvailable) {
+                    CameraSelector.DEFAULT_BACK_CAMERA
+                } else {
+                    CameraSelector.DEFAULT_FRONT_CAMERA
+                }
+
                 cameraProvider.unbindAll()
                 val boundCamera = cameraProvider.bindToLifecycle(
                     lifecycleOwner,
@@ -225,12 +262,14 @@ fun CameraScreen(
         }
     }
 
-    // Toggle torch state
-    LaunchedEffect(activeCamera, flashState) {
+    // Toggle torch state safely (checking hasFlashUnit to eliminate glitching)
+    LaunchedEffect(activeCamera, flashState, lensFacing) {
         val camera = activeCamera ?: return@LaunchedEffect
         try {
-            val enableTorch = (flashState == "ALWAYS")
-            camera.cameraControl.enableTorch(enableTorch)
+            if (camera.cameraInfo.hasFlashUnit()) {
+                val enableTorch = (flashState == "ALWAYS")
+                camera.cameraControl.enableTorch(enableTorch)
+            }
         } catch (e: Exception) {
             Log.e("CameraScreen", "Failed to set torch state", e)
         }
@@ -424,7 +463,7 @@ fun CameraScreen(
                 }
             }
 
-            // Top Header Controls
+            // Top Header Controls: Compact, streamlined, and non-intrusive
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -434,116 +473,58 @@ fun CameraScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // DiviCam Brand Header
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "DIVI",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 18.sp,
-                                letterSpacing = 0.8.sp,
-                                color = Color.White
-                            )
-                            Text(
-                                text = "CAM",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 18.sp,
-                                letterSpacing = 0.8.sp,
-                                color = Color(0xFF38BDF8)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Icon(
-                                imageVector = Icons.Default.Verified,
-                                contentDescription = "Verified",
-                                tint = Color(0xFF38BDF8),
-                                modifier = Modifier.size(15.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            val hasGps = locationPermissionGranted && locationData != null
-                            Box(
-                                modifier = Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(if (hasGps) Color(0xFF10B981) else Color(0xFFEF4444))
-                            )
-                            Text(
-                                text = if (hasGps) "GPS LOCKED • FAST" else "GPS SEARCHING",
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.8.sp,
-                                color = Color.White.copy(alpha = 0.5f)
-                            )
-                        }
+                    // DiviCam Brand Header (Compact)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "DIVI",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 15.sp,
+                            letterSpacing = 0.5.sp,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "CAM",
+                            fontWeight = FontWeight.Black,
+                            fontSize = 15.sp,
+                            letterSpacing = 0.5.sp,
+                            color = Color(0xFF38BDF8)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        val hasGps = locationPermissionGranted && locationData != null
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(if (hasGps) Color(0xFF10B981) else Color(0xFFEF4444))
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = if (hasGps) "GPS" else "NO GPS",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (hasGps) Color(0xFF10B981) else Color(0xFFEF4444)
+                        )
                     }
 
-                    // Top Bar Action Buttons
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Quick Master Stamp Toggle (Stamps ON / OFF)
-                        IconButton(
-                            onClick = {
-                                val state = viewModel.toggleAllStamps()
-                                Toast.makeText(
-                                    context,
-                                    if (state) "Stamps ENABLED" else "All stamps TURNED OFF",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            },
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(
-                                    if (allStampsEnabled) Color(0xFF0284C7).copy(alpha = 0.7f) else Color.Black.copy(alpha = 0.5f)
-                                )
-                                .testTag("quick_toggle_stamps_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Layers,
-                                contentDescription = if (allStampsEnabled) "Turn stamps off" else "Turn stamps on",
-                                tint = if (allStampsEnabled) Color(0xFF38BDF8) else Color.White.copy(alpha = 0.5f)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        // GPS Status / Refresh trigger
-                        IconButton(
-                            onClick = {
-                                if (locationPermissionGranted) {
-                                    viewModel.refreshLocation()
-                                    Toast.makeText(context, "Location refreshed", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    requestLocationLauncher.launch(PermissionUtils.LOCATION_PERMISSIONS)
-                                }
-                            },
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.5f))
-                                .testTag("gps_status_button")
-                        ) {
-                            Icon(
-                                imageVector = if (locationPermissionGranted) Icons.Default.GpsFixed else Icons.Default.GpsOff,
-                                contentDescription = "GPS Status Indicator",
-                                tint = if (locationPermissionGranted && locationData != null) Color(0xFF10B981) else Color(0xFFFFD600)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        // Quick Flash Toggle
+                    // Top Bar Action Buttons (Compact 34dp circular icons)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // Quick Flash Toggle (Off / On-Click / Always)
                         val currentFlash = flashState
                         val iconVector = if (currentFlash == "OFF") Icons.Default.FlashOff else Icons.Default.FlashOn
                         val iconTint = when (currentFlash) {
                             "ALWAYS" -> Color(0xFFFFD600)
                             "ON_CLICK", "ON" -> Color.White
-                            else -> Color.White.copy(alpha = 0.4f)
+                            else -> Color.White.copy(alpha = 0.45f)
                         }
                         IconButton(
                             onClick = {
@@ -556,31 +537,88 @@ fun CameraScreen(
                                 flashState = newVal
                             },
                             modifier = Modifier
+                                .size(34.dp)
                                 .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.5f))
+                                .background(Color.Black.copy(alpha = 0.45f))
                                 .testTag("quick_flash_toggle_button")
                         ) {
                             Icon(
                                 imageVector = iconVector,
                                 contentDescription = "Flash: $currentFlash",
-                                tint = iconTint
+                                tint = iconTint,
+                                modifier = Modifier.size(17.dp)
                             )
                         }
 
-                        Spacer(modifier = Modifier.width(8.dp))
+                        // Switch / Flip Front & Back Camera
+                        val isFront = (lensFacing == CameraSelector.LENS_FACING_FRONT)
+                        IconButton(
+                            onClick = {
+                                lensFacing = if (isFront) {
+                                    CameraSelector.LENS_FACING_BACK
+                                } else {
+                                    CameraSelector.LENS_FACING_FRONT
+                                }
+                                Toast.makeText(
+                                    context,
+                                    if (isFront) "Back camera" else "Front selfie camera",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(if (isFront) Color(0xFF0284C7).copy(alpha = 0.8f) else Color.Black.copy(alpha = 0.45f))
+                                .testTag("flip_camera_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Cached,
+                                contentDescription = "Flip camera",
+                                tint = if (isFront) Color.White else Color.White.copy(alpha = 0.85f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        // Quick Master Stamp Toggle (Stamps ON / OFF)
+                        IconButton(
+                            onClick = {
+                                val state = viewModel.toggleAllStamps()
+                                Toast.makeText(
+                                    context,
+                                    if (state) "Stamps ON" else "Stamps OFF",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (allStampsEnabled) Color(0xFF0284C7).copy(alpha = 0.8f) else Color.Black.copy(alpha = 0.45f)
+                                )
+                                .testTag("quick_toggle_stamps_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Layers,
+                                contentDescription = if (allStampsEnabled) "Turn stamps off" else "Turn stamps on",
+                                tint = if (allStampsEnabled) Color(0xFF38BDF8) else Color.White.copy(alpha = 0.45f),
+                                modifier = Modifier.size(17.dp)
+                            )
+                        }
 
                         // Settings screen button
                         IconButton(
                             onClick = onNavigateToSettings,
                             modifier = Modifier
+                                .size(34.dp)
                                 .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.5f))
+                                .background(Color.Black.copy(alpha = 0.45f))
                                 .testTag("settings_button")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Settings,
                                 contentDescription = "Settings",
-                                tint = Color.White
+                                tint = Color.White,
+                                modifier = Modifier.size(17.dp)
                             )
                         }
                     }
@@ -674,18 +712,13 @@ fun CameraScreen(
                 }
             }
 
-            // Bottom Navigation & Capture Controls
+            // Bottom Navigation & Capture Controls: Transparent background to see camera preview completely
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                    .background(Color(0xFF070C18).copy(alpha = 0.94f))
-                    .border(
-                        androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.15f)),
-                        RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-                    )
-                    .padding(top = 16.dp, bottom = 12.dp, start = 16.dp, end = 16.dp),
+                    .background(Color.Transparent)
+                    .padding(top = 4.dp, bottom = 12.dp, start = 16.dp, end = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // If in ID Mode Step 2, show a Reset / Retake chip
@@ -693,7 +726,7 @@ fun CameraScreen(
                     Row(
                         modifier = Modifier
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF1E293B))
+                            .background(Color.Black.copy(alpha = 0.6f))
                             .clickable {
                                 viewModel.resetIdFlow()
                                 Toast.makeText(context, "ID Capture Reset", Toast.LENGTH_SHORT).show()
@@ -705,17 +738,16 @@ fun CameraScreen(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Reset ID Capture", color = Color(0xFF38BDF8), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                 }
 
-                // Mode Selector (ID Card vs. Single Photo)
+                // Mode Selector (ID Card vs. Single Photo) - Sleek Translucent Floating Pill
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 12.dp)
-                        .background(Color(0xFF0F172A), RoundedCornerShape(12.dp))
-                        .border(androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)), RoundedCornerShape(12.dp))
-                        .padding(4.dp),
+                        .padding(bottom = 10.dp)
+                        .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(22.dp))
+                        .padding(3.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     val modes = listOf(
@@ -730,8 +762,8 @@ fun CameraScreen(
                         Box(
                             modifier = Modifier
                                 .weight(1f)
-                                .height(40.dp)
-                                .clip(RoundedCornerShape(8.dp))
+                                .height(38.dp)
+                                .clip(RoundedCornerShape(18.dp))
                                 .background(if (isSelected) Color(0xFF0284C7) else Color.Transparent)
                                 .clickable {
                                     if (!isCapturing) {
@@ -749,12 +781,12 @@ fun CameraScreen(
                                     imageVector = icon,
                                     contentDescription = modeName,
                                     tint = if (isSelected) Color.White else Color(0xFF94A3B8),
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = modeName,
-                                    fontSize = 13.sp,
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (isSelected) Color.White else Color(0xFF94A3B8)
                                 )
@@ -771,13 +803,13 @@ fun CameraScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // LEFT SLOT: Phone Gallery Button (Robust resolution + Photo Picker fallback)
+                    // LEFT SLOT: Phone Gallery Button (Translucent floating button)
                     Box(
                         modifier = Modifier
                             .size(54.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFF0F172A))
-                            .border(androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.35f)), RoundedCornerShape(14.dp))
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .border(androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)), RoundedCornerShape(16.dp))
                             .clickable {
                                 var launched = false
                                 try {
@@ -886,7 +918,7 @@ fun CameraScreen(
                         modifier = Modifier
                             .scale(buttonScale)
                             .size(76.dp)
-                            .border(androidx.compose.foundation.BorderStroke(2.dp, Color.White.copy(alpha = 0.2f)), CircleShape)
+                            .border(androidx.compose.foundation.BorderStroke(2.dp, Color.White.copy(alpha = 0.3f)), CircleShape)
                             .padding(4.dp)
                             .clip(CircleShape)
                             .background(Color.White, CircleShape)
@@ -897,8 +929,9 @@ fun CameraScreen(
                                     val mockBitmap = createMockCapturedBitmap(context, cameraMode, currentStep)
                                     viewModel.handlePhotoCaptured(mockBitmap, screenWidthPx, screenHeightPx)
                                 } else {
+                                    val hasFlash = activeCamera?.cameraInfo?.hasFlashUnit() == true
                                     imageCapture.flashMode = when (viewModel.settings.flashMode) {
-                                        "ON_CLICK", "ON" -> ImageCapture.FLASH_MODE_ON
+                                        "ON_CLICK", "ON" -> if (hasFlash) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
                                         else -> ImageCapture.FLASH_MODE_OFF
                                     }
 
@@ -911,8 +944,17 @@ fun CameraScreen(
                                                 val originalBitmap = image.toBitmap()
                                                 image.close()
 
-                                                val uprightBitmap = if (rotation != 0) {
-                                                    val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+                                                val matrix = Matrix().apply {
+                                                    if (rotation != 0) {
+                                                        postRotate(rotation.toFloat())
+                                                    }
+                                                    if (lensFacing == CameraSelector.LENS_FACING_FRONT) {
+                                                        // Mirror horizontally for selfie camera so capture matches preview
+                                                        postScale(-1f, 1f, originalBitmap.width / 2f, originalBitmap.height / 2f)
+                                                    }
+                                                }
+
+                                                val uprightBitmap = if (rotation != 0 || lensFacing == CameraSelector.LENS_FACING_FRONT) {
                                                     Bitmap.createBitmap(
                                                         originalBitmap,
                                                         0,
@@ -934,7 +976,7 @@ fun CameraScreen(
                                     )
                                 }
                             }
-                            .border(androidx.compose.foundation.BorderStroke(4.dp, Color(0xFF070C18)), CircleShape)
+                            .border(androidx.compose.foundation.BorderStroke(4.dp, Color.Black.copy(alpha = 0.6f)), CircleShape)
                             .testTag("capture_button"),
                         contentAlignment = Alignment.Center
                     ) {
@@ -953,13 +995,13 @@ fun CameraScreen(
                         }
                     }
 
-                    // RIGHT SLOT: Upload 2 Photos & Combine Button
+                    // RIGHT SLOT: Upload 2 Photos & Combine Button (Translucent floating button)
                     Box(
                         modifier = Modifier
                             .size(54.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Brush.linearGradient(listOf(Color(0xFF2563EB), Color(0xFF0284C7))))
-                            .border(androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)), RoundedCornerShape(14.dp))
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Brush.linearGradient(listOf(Color(0xFF2563EB).copy(alpha = 0.85f), Color(0xFF0284C7).copy(alpha = 0.85f))))
+                            .border(androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)), RoundedCornerShape(16.dp))
                             .clickable {
                                 showCombineDialog = true
                             }
@@ -986,7 +1028,7 @@ fun CameraScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // Gesture Bar Home Indicator
                 Box(
@@ -1125,8 +1167,7 @@ fun CornerMiniMap(
 
     Box(
         modifier = modifier
-            .size(110.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .size(100.dp)
             .alpha(opacity)
     ) {
         AndroidView(

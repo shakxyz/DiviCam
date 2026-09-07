@@ -131,13 +131,20 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             _isCapturing.value = true
             try {
+                val maxDim = when (settings.imageResolution) {
+                    "Full Sensor" -> 4096
+                    "High" -> 2560
+                    else -> 1920 // Standard mobile default
+                }
+
                 when (cameraMode.value) {
                     "ID" -> {
-                        val processed = if (screenWidth > 0f && screenHeight > 0f) {
+                        val cropped = if (screenWidth > 0f && screenHeight > 0f) {
                             ImageProcessor.cropToIdCardBox(bitmap, screenWidth, screenHeight)
                         } else {
                             bitmap
                         }
+                        val processed = ImageProcessor.normalizeResolution(cropped, maxDim)
                         if (_currentStep.value == 1) {
                             _frontImage.value = processed
                             _currentStep.value = 2
@@ -150,8 +157,10 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                         }
                     }
                     "SINGLE" -> {
+                        val viewfinderCropped = ImageProcessor.cropToVisibleViewfinder(bitmap, screenWidth, screenHeight, isFitCenter = true)
+                        val normalized = ImageProcessor.normalizeResolution(viewfinderCropped, maxDim)
                         withContext(Dispatchers.IO) {
-                            stampAndSaveSinglePhoto(bitmap)
+                            stampAndSaveSinglePhoto(normalized)
                         }
                     }
                 }
@@ -168,8 +177,16 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             _isCapturing.value = true
             try {
                 withContext(Dispatchers.IO) {
+                    val maxDim = when (settings.imageResolution) {
+                        "Full Sensor" -> 4096
+                        "High" -> 2560
+                        else -> 1920
+                    }
+                    val norm1 = ImageProcessor.normalizeResolution(photo1, maxDim)
+                    val norm2 = ImageProcessor.normalizeResolution(photo2, maxDim)
+
                     // Combine vertically (Front on top, Back on bottom)
-                    val combined = ImageProcessor.combineImages(photo1, photo2)
+                    val combined = ImageProcessor.combineImages(norm1, norm2)
 
                     val finalBitmap = if (applyStamps && settings.enableAllStamps) {
                         val timestampText = DateTimeUtils.formatTimestamp(
@@ -207,7 +224,11 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                         combined
                     }
 
-                    val uri = galleryRepository.saveBitmapToGallery(finalBitmap, settings.photoQuality)
+                    val uri = galleryRepository.saveBitmapToGallery(
+                        bitmap = finalBitmap,
+                        quality = settings.photoQuality,
+                        format = settings.imageFormat
+                    )
                     _navigationToPreview.value = uri
                 }
             } catch (e: Exception) {
@@ -257,7 +278,11 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             stampBorderEnabled = settings.stampBorderEnabled
         )
 
-        val uri = galleryRepository.saveBitmapToGallery(stamped, settings.photoQuality)
+        val uri = galleryRepository.saveBitmapToGallery(
+            bitmap = stamped,
+            quality = settings.photoQuality,
+            format = settings.imageFormat
+        )
         _navigationToPreview.value = uri
     }
 
@@ -295,7 +320,11 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             stampBorderEnabled = settings.stampBorderEnabled
         )
 
-        val uri = galleryRepository.saveBitmapToGallery(stamped, settings.photoQuality)
+        val uri = galleryRepository.saveBitmapToGallery(
+            bitmap = stamped,
+            quality = settings.photoQuality,
+            format = settings.imageFormat
+        )
         _navigationToPreview.value = uri
     }
 

@@ -297,8 +297,9 @@ object ImageProcessor {
             }
 
             canvas.save()
+            // Clean square map with NO border at all per user requirement
             val clipPath = android.graphics.Path().apply {
-                addRoundRect(mapRect, baseSize * 0.3f, baseSize * 0.3f, android.graphics.Path.Direction.CW)
+                addRect(mapRect, android.graphics.Path.Direction.CW)
             }
             canvas.clipPath(clipPath)
 
@@ -350,17 +351,7 @@ object ImageProcessor {
             canvas.drawCircle(centerValX, centerValY, baseSize * 0.16f, targetPaint)
 
             canvas.restore()
-
-            // Draw border only if user explicitly enabled it
-            if (mapBorderEnabled) {
-                val mapBorderPaint = Paint().apply {
-                    color = Color.parseColor("#40FFFFFF")
-                    style = Paint.Style.STROKE
-                    strokeWidth = 2f
-                    isAntiAlias = true
-                }
-                canvas.drawRoundRect(mapRect, baseSize * 0.3f, baseSize * 0.3f, mapBorderPaint)
-            }
+            // Strictly NO border or border color around the map square per user requirement
         }
 
         return workingBitmap
@@ -428,6 +419,71 @@ object ImageProcessor {
             Bitmap.createBitmap(bitmap, x, y, w, h)
         } catch (e: Exception) {
             Log.e("ImageProcessor", "Failed to crop image", e)
+            bitmap
+        }
+    }
+
+    /**
+     * Normalizes image resolution to standard mobile camera dimension (e.g. 1920 or 2048px).
+     * Eliminates huge 48MP/12MP memory bloat and keeps WebP output crisp and compact.
+     */
+    fun normalizeResolution(bitmap: Bitmap, maxDimension: Int = 1920): Bitmap {
+        val w = bitmap.width
+        val h = bitmap.height
+        if (w <= maxDimension && h <= maxDimension) {
+            return bitmap
+        }
+        val scale = maxDimension.toFloat() / maxOf(w, h)
+        val newW = (w * scale).toInt().coerceAtLeast(1)
+        val newH = (h * scale).toInt().coerceAtLeast(1)
+        return try {
+            Bitmap.createScaledBitmap(bitmap, newW, newH, true)
+        } catch (e: Exception) {
+            Log.e("ImageProcessor", "Failed to scale bitmap resolution", e)
+            bitmap
+        }
+    }
+
+    /**
+     * Ensures what the user sees in the viewfinder is 1:1 identical to what is captured in the output.
+     */
+    fun cropToVisibleViewfinder(
+        bitmap: Bitmap,
+        screenWidth: Float,
+        screenHeight: Float,
+        isFitCenter: Boolean = true
+    ): Bitmap {
+        if (screenWidth <= 0f || screenHeight <= 0f) {
+            return bitmap
+        }
+        // In FIT_CENTER mode, the entire camera sensor image is framed on screen without cropping
+        if (isFitCenter) {
+            return bitmap
+        }
+
+        val camW = bitmap.width.toFloat()
+        val camH = bitmap.height.toFloat()
+
+        val scale = java.lang.Math.max(screenWidth / camW, screenHeight / camH)
+        val scaledCamW = camW * scale
+        val scaledCamH = camH * scale
+        val offsetX = (screenWidth - scaledCamW) / 2f
+        val offsetY = (screenHeight - scaledCamH) / 2f
+
+        val imgLeft = (0f - offsetX) / scale
+        val imgTop = (0f - offsetY) / scale
+        val imgWidth = screenWidth / scale
+        val imgHeight = screenHeight / scale
+
+        val x = imgLeft.toInt().coerceIn(0, bitmap.width - 1)
+        val y = imgTop.toInt().coerceIn(0, bitmap.height - 1)
+        val w = imgWidth.toInt().coerceIn(1, bitmap.width - x)
+        val h = imgHeight.toInt().coerceIn(1, bitmap.height - y)
+
+        return try {
+            Bitmap.createBitmap(bitmap, x, y, w, h)
+        } catch (e: Exception) {
+            Log.e("ImageProcessor", "Failed to crop viewfinder", e)
             bitmap
         }
     }
