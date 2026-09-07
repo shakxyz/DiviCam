@@ -10,6 +10,36 @@ import android.util.Log
 
 object ImageProcessor {
 
+    private val mapTileCache = android.util.LruCache<String, Bitmap>(20)
+
+    fun prefetchMapTile(lat: Double, lng: Double) {
+        val zoom = 15
+        val x = ((lng + 180.0) / 360.0 * (1 shl zoom)).toInt()
+        val latRad = lat * Math.PI / 180.0
+        val y = ((1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0 * (1 shl zoom)).toInt()
+        val key = "$zoom/$x/$y"
+        if (mapTileCache.get(key) != null) return
+
+        Thread {
+            try {
+                val urlStr = "https://tile.openstreetmap.org/$zoom/$x/$y.png"
+                val url = java.net.URL(urlStr)
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.connectTimeout = 2000
+                connection.readTimeout = 2000
+                connection.setRequestProperty("User-Agent", "DiviCam/1.0 (Android; contact: app@divicam.xyz)")
+                connection.inputStream.use { stream ->
+                    val bmp = android.graphics.BitmapFactory.decodeStream(stream)
+                    if (bmp != null) {
+                        mapTileCache.put(key, bmp)
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore prefetch network failure
+            }
+        }.start()
+    }
+
     fun combineImages(front: Bitmap, back: Bitmap): Bitmap {
         // Target width will be normalized to front image width
         val targetWidth = front.width
@@ -358,25 +388,17 @@ object ImageProcessor {
     }
 
     private fun fetchMapTile(lat: Double, lng: Double): Bitmap? {
-        try {
-            val zoom = 15
-            val x = ((lng + 180.0) / 360.0 * (1 shl zoom)).toInt()
-            val latRad = lat * Math.PI / 180.0
-            val y = ((1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0 * (1 shl zoom)).toInt()
-            
-            // Standard OpenStreetMap tiles - Free, public, no API key required
-            val urlStr = "https://tile.openstreetmap.org/$zoom/$x/$y.png"
-            val url = java.net.URL(urlStr)
-            val connection = url.openConnection() as java.net.HttpURLConnection
-            connection.connectTimeout = 3000
-            connection.readTimeout = 3000
-            connection.setRequestProperty("User-Agent", "DiviCam/1.0 (Android; contact: mail@shak.xyz)")
-            connection.inputStream.use { stream ->
-                return android.graphics.BitmapFactory.decodeStream(stream)
-            }
-        } catch (e: Exception) {
-            Log.d("ImageProcessor", "Map tile download skipped or unavailable: ${e.message}")
-        }
+        val zoom = 15
+        val x = ((lng + 180.0) / 360.0 * (1 shl zoom)).toInt()
+        val latRad = lat * Math.PI / 180.0
+        val y = ((1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0 * (1 shl zoom)).toInt()
+        val key = "$zoom/$x/$y"
+
+        val cached = mapTileCache.get(key)
+        if (cached != null) return cached
+
+        // Trigger async prefetch for future shots so current photo renders instantly without latency
+        prefetchMapTile(lat, lng)
         return null
     }
 

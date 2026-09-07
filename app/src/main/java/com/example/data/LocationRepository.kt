@@ -201,10 +201,10 @@ class LocationRepository(private val context: Context) {
                 return@withContext cachedLocation
             }
 
-            // Fast mobile location query: Check fused last location first
+            // Fast mobile location query: Check fused last location first (1.5s timeout)
             var finalLoc: Location? = try {
                 val task = fusedLocationClient.lastLocation
-                Tasks.await(task)
+                Tasks.await(task, 1500, java.util.concurrent.TimeUnit.MILLISECONDS)
             } catch (e: Exception) {
                 null
             }
@@ -224,14 +224,14 @@ class LocationRepository(private val context: Context) {
                 }
             }
 
-            // If still null, request fresh high-speed balanced fix
+            // If still null, request fresh high-speed fix with 2.5s timeout
             if (finalLoc == null) {
                 finalLoc = try {
                     val currentTask = fusedLocationClient.getCurrentLocation(
-                        Priority.PRIORITY_BALANCED_POWER_ACCURACY,
+                        Priority.PRIORITY_HIGH_ACCURACY,
                         null
                     )
-                    Tasks.await(currentTask)
+                    Tasks.await(currentTask, 2500, java.util.concurrent.TimeUnit.MILLISECONDS)
                 } catch (e: Exception) {
                     null
                 }
@@ -261,7 +261,8 @@ class LocationRepository(private val context: Context) {
                     formatCoordinates(lat, lng, alt, bearing)
                 }
 
-                var addressStr = cachedLocation?.address ?: "Resolving address..."
+                var addressStr = cachedLocation?.address ?: "Current Location"
+                // Quickly resolve geocoder in background or fast lookup
                 try {
                     val geocoder = Geocoder(context, Locale.getDefault())
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

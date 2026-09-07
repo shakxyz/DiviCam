@@ -22,10 +22,17 @@ import androidx.camera.core.Preview as CameraPreviewX
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -69,6 +76,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
@@ -81,6 +89,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -90,6 +99,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.testTag
@@ -99,7 +109,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.example.utils.PermissionUtils
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @SuppressLint("UnsafeOptInUsageError")
 @Composable
@@ -126,11 +140,34 @@ fun CameraScreen(
     val navigationUri by viewModel.navigationToPreview.collectAsState()
 
     // Local UI states
+    val coroutineScope = rememberCoroutineScope()
     var flashState by remember { mutableStateOf(viewModel.settings.flashMode) }
     var lensFacing by remember { mutableStateOf(CameraSelector.LENS_FACING_BACK) }
     var isCameraFallback by remember { mutableStateOf(false) }
     var showCombineDialog by remember { mutableStateOf(false) }
     var activeCamera by remember { mutableStateOf<androidx.camera.core.Camera?>(null) }
+    var shutterFlash by remember { mutableStateOf(false) }
+
+    val cameraExecutor = remember { java.util.concurrent.Executors.newSingleThreadExecutor() }
+    DisposableEffect(Unit) {
+        onDispose {
+            cameraExecutor.shutdown()
+        }
+    }
+
+    // Refresh GPS whenever the app is opened or brought forward from background
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.checkPermissions()
+                viewModel.refreshLocation()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     // PreviewView for CameraX: FIT_CENTER ensures 100% of the camera feed matches the screen preview with zero cropped borders
     val previewView = remember {
@@ -477,40 +514,86 @@ fun CameraScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // DiviCam Brand Header (Compact)
+                    val isRefreshingGps by viewModel.isRefreshingLocation.collectAsState()
+                    val infiniteTransition = rememberInfiniteTransition(label = "gps_refresh")
+                    val rotationAngle by infiniteTransition.animateFloat(
+                        initialValue = 0f,
+                        targetValue = 360f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(800, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "gps_spinner"
+                    )
+
+                    // DiviCam Brand Header + Interactive GPS Refresh Button
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(vertical = 4.dp)
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = "DIVI",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 15.sp,
-                            letterSpacing = 0.5.sp,
-                            color = Color.White
-                        )
-                        Text(
-                            text = "CAM",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 15.sp,
-                            letterSpacing = 0.5.sp,
-                            color = Color(0xFF38BDF8)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "DIVI",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 15.sp,
+                                letterSpacing = 0.5.sp,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "CAM",
+                                fontWeight = FontWeight.Black,
+                                fontSize = 15.sp,
+                                letterSpacing = 0.5.sp,
+                                color = Color(0xFF38BDF8)
+                            )
+                        }
+
                         val hasGps = locationPermissionGranted && locationData != null
+                        // Dedicated Refresh GPS Button (Direct UI/UX control)
                         Box(
                             modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(if (hasGps) Color(0xFF10B981) else Color(0xFFEF4444))
-                        )
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text(
-                            text = if (hasGps) "GPS" else "NO GPS",
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (hasGps) Color(0xFF10B981) else Color(0xFFEF4444)
-                        )
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(if (hasGps) Color(0xFF064E3B).copy(alpha = 0.8f) else Color(0xFF450A0A).copy(alpha = 0.8f))
+                                .border(
+                                    1.dp,
+                                    if (hasGps) Color(0xFF10B981).copy(alpha = 0.6f) else Color(0xFFEF4444).copy(alpha = 0.6f),
+                                    RoundedCornerShape(16.dp)
+                                )
+                                .clickable {
+                                    if (locationPermissionGranted) {
+                                        viewModel.refreshLocation()
+                                        Toast.makeText(context, "Refreshing GPS position...", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        requestLocationLauncher.launch(PermissionUtils.LOCATION_PERMISSIONS)
+                                    }
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                .testTag("refresh_gps_button"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Refresh GPS",
+                                    tint = if (hasGps) Color(0xFF34D399) else Color(0xFFF87171),
+                                    modifier = Modifier
+                                        .size(13.dp)
+                                        .graphicsLayer {
+                                            if (isRefreshingGps) rotationZ = rotationAngle
+                                        }
+                                )
+                                Text(
+                                    text = if (isRefreshingGps) "Updating..." else if (hasGps) "GPS Ready" else "Tap for GPS",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (hasGps) Color(0xFFD1FAE5) else Color(0xFFFEE2E2)
+                                )
+                            }
+                        }
                     }
 
                     // Top Bar Action Buttons (Compact 34dp circular icons)
@@ -925,6 +1008,13 @@ fun CameraScreen(
                             .clickable(interactionSource = interactionSource, indication = null) {
                                 if (isCapturing) return@clickable
 
+                                // Instant shutter flash animation for lightning-fast feedback
+                                coroutineScope.launch {
+                                    shutterFlash = true
+                                    delay(50)
+                                    shutterFlash = false
+                                }
+
                                 if (isCameraFallback) {
                                     val mockBitmap = createMockCapturedBitmap(context, cameraMode, currentStep)
                                     viewModel.handlePhotoCaptured(mockBitmap, screenWidthPx, screenHeightPx)
@@ -935,9 +1025,9 @@ fun CameraScreen(
                                         else -> ImageCapture.FLASH_MODE_OFF
                                     }
 
-                                    val executor = ContextCompat.getMainExecutor(context)
+                                    // Run image reception and decoding on dedicated background cameraExecutor
                                     imageCapture.takePicture(
-                                        executor,
+                                        cameraExecutor,
                                         object : ImageCapture.OnImageCapturedCallback() {
                                             override fun onCaptureSuccess(image: ImageProxy) {
                                                 val rotation = image.imageInfo.rotationDegrees
@@ -986,12 +1076,20 @@ fun CameraScreen(
                                 .clip(CircleShape)
                                 .background(Color(0xFF0284C7))
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.PhotoCamera,
-                                contentDescription = "Capture",
-                                tint = Color.White,
-                                modifier = Modifier.size(26.dp).align(Alignment.Center)
-                            )
+                            if (isCapturing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(28.dp).align(Alignment.Center),
+                                    strokeWidth = 3.dp,
+                                    color = Color.White
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.PhotoCamera,
+                                    contentDescription = "Capture",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(26.dp).align(Alignment.Center)
+                                )
+                            }
                         }
                     }
 
@@ -1040,54 +1138,49 @@ fun CameraScreen(
                 )
             }
 
-            // Spinner Loading Overlay
+            // Lightning-Fast Shutter Flash
             AnimatedVisibility(
-                visible = isCapturing,
-                enter = fadeIn(),
-                exit = fadeOut()
+                visible = shutterFlash,
+                enter = fadeIn(animationSpec = tween(30)),
+                exit = fadeOut(animationSpec = tween(80)),
+                modifier = Modifier.fillMaxSize()
             ) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.75f)),
-                    contentAlignment = Alignment.Center
+                        .background(Color.White)
+                )
+            }
+
+            // Sleek Non-Blocking HD Saving Pill (Replaces slow blocking modal)
+            AnimatedVisibility(
+                visible = isCapturing,
+                enter = fadeIn(tween(100)) + slideInVertically(initialOffsetY = { -it }),
+                exit = fadeOut(tween(150)) + slideOutVertically(targetOffsetY = { -it }),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 56.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color(0xFF0F172A).copy(alpha = 0.9f))
+                        .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.6f), RoundedCornerShape(20.dp))
+                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
-                        shape = RoundedCornerShape(16.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.4f)),
-                        modifier = Modifier.width(260.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Cached,
-                                contentDescription = "Rendering composition icon",
-                                tint = Color(0xFF38BDF8),
-                                modifier = Modifier.size(48.dp)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "DiviCam Processing",
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "Stamping verified GPS, date and metadata to image.",
-                                color = Color(0xFF94A3B8),
-                                fontSize = 12.sp,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                    }
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(13.dp),
+                        strokeWidth = 2.dp,
+                        color = Color(0xFF38BDF8)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = if (cameraMode == "ID" && currentStep == 1) "Front Side Saved!" else "Saving HD Photo...",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }

@@ -49,6 +49,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     private val _locationData = MutableStateFlow<LocationData?>(locationRepository.getCachedLocation())
     val locationData: StateFlow<LocationData?> = _locationData.asStateFlow()
 
+    private val _isRefreshingLocation = MutableStateFlow(false)
+    val isRefreshingLocation: StateFlow<Boolean> = _isRefreshingLocation.asStateFlow()
+
     private val _customText = MutableStateFlow(settings.customText)
     val customText: StateFlow<String> = _customText.asStateFlow()
 
@@ -88,8 +91,18 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     fun refreshLocation() {
         if (PermissionUtils.hasLocationPermissions(getApplication())) {
             viewModelScope.launch {
-                val loc = locationRepository.fetchCurrentLocation(settings)
-                _locationData.value = loc
+                _isRefreshingLocation.value = true
+                try {
+                    val loc = locationRepository.fetchCurrentLocation(settings)
+                    _locationData.value = loc
+                    loc?.let {
+                        ImageProcessor.prefetchMapTile(it.latitude, it.longitude)
+                    }
+                } catch (e: Exception) {
+                    Log.e("CameraViewModel", "Error refreshing GPS location", e)
+                } finally {
+                    _isRefreshingLocation.value = false
+                }
             }
         }
     }
@@ -131,35 +144,33 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             _isCapturing.value = true
             try {
-                val maxDim = when (settings.imageResolution) {
-                    "Full Sensor" -> 4096
-                    "High" -> 2560
-                    else -> 1920 // Standard mobile default
-                }
+                withContext(Dispatchers.Default) {
+                    val maxDim = when (settings.imageResolution) {
+                        "Full Sensor" -> 4096
+                        "High" -> 2560
+                        else -> 1920 // High-definition 1080p standard default
+                    }
 
-                when (cameraMode.value) {
-                    "ID" -> {
-                        val cropped = if (screenWidth > 0f && screenHeight > 0f) {
-                            ImageProcessor.cropToIdCardBox(bitmap, screenWidth, screenHeight)
-                        } else {
-                            bitmap
-                        }
-                        val processed = ImageProcessor.normalizeResolution(cropped, maxDim)
-                        if (_currentStep.value == 1) {
-                            _frontImage.value = processed
-                            _currentStep.value = 2
-                            refreshLocation()
-                        } else {
-                            _backImage.value = processed
-                            withContext(Dispatchers.IO) {
+                    when (cameraMode.value) {
+                        "ID" -> {
+                            val cropped = if (screenWidth > 0f && screenHeight > 0f) {
+                                ImageProcessor.cropToIdCardBox(bitmap, screenWidth, screenHeight)
+                            } else {
+                                bitmap
+                            }
+                            val processed = ImageProcessor.normalizeResolution(cropped, maxDim)
+                            if (_currentStep.value == 1) {
+                                _frontImage.value = processed
+                                _currentStep.value = 2
+                                refreshLocation()
+                            } else {
+                                _backImage.value = processed
                                 combineAndStampIdCard()
                             }
                         }
-                    }
-                    "SINGLE" -> {
-                        val viewfinderCropped = ImageProcessor.cropToVisibleViewfinder(bitmap, screenWidth, screenHeight, isFitCenter = true)
-                        val normalized = ImageProcessor.normalizeResolution(viewfinderCropped, maxDim)
-                        withContext(Dispatchers.IO) {
+                        "SINGLE" -> {
+                            val viewfinderCropped = ImageProcessor.cropToVisibleViewfinder(bitmap, screenWidth, screenHeight, isFitCenter = true)
+                            val normalized = ImageProcessor.normalizeResolution(viewfinderCropped, maxDim)
                             stampAndSaveSinglePhoto(normalized)
                         }
                     }
@@ -176,7 +187,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             _isCapturing.value = true
             try {
-                withContext(Dispatchers.IO) {
+                withContext(Dispatchers.Default) {
                     val maxDim = when (settings.imageResolution) {
                         "Full Sensor" -> 4096
                         "High" -> 2560
@@ -224,9 +235,11 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                         combined
                     }
 
+                    val prefix = if (cameraMode.value == "ID") "IDCAM" else "DiviCam"
                     val uri = galleryRepository.saveBitmapToGallery(
                         bitmap = finalBitmap,
                         quality = settings.photoQuality,
+                        customName = "${prefix}_${System.currentTimeMillis()}",
                         format = settings.imageFormat
                     )
                     _navigationToPreview.value = uri
@@ -278,9 +291,11 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             stampBorderEnabled = settings.stampBorderEnabled
         )
 
+        // Exact naming requested: IDCAM in ID card mode
         val uri = galleryRepository.saveBitmapToGallery(
             bitmap = stamped,
             quality = settings.photoQuality,
+            customName = "IDCAM_${System.currentTimeMillis()}",
             format = settings.imageFormat
         )
         _navigationToPreview.value = uri
@@ -320,9 +335,11 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             stampBorderEnabled = settings.stampBorderEnabled
         )
 
+        // Exact naming requested: DiviCam in single mode
         val uri = galleryRepository.saveBitmapToGallery(
             bitmap = stamped,
             quality = settings.photoQuality,
+            customName = "DiviCam_${System.currentTimeMillis()}",
             format = settings.imageFormat
         )
         _navigationToPreview.value = uri
