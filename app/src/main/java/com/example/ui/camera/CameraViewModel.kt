@@ -140,6 +140,10 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun setCapturing(capturing: Boolean) {
+        _isCapturing.value = capturing
+    }
+
     fun handlePhotoCaptured(bitmap: Bitmap, screenWidth: Float = 0f, screenHeight: Float = 0f) {
         viewModelScope.launch {
             _isCapturing.value = true

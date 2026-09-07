@@ -105,6 +105,7 @@ fun SettingsScreen(
     var showBrandingBadge by remember { mutableStateOf(settingsManager.showBrandingBadge) }
     var imageFormat by remember { mutableStateOf(settingsManager.imageFormat) }
     var imageResolution by remember { mutableStateOf(settingsManager.imageResolution) }
+    var shutterMode by remember { mutableStateOf(settingsManager.shutterMode) }
 
     // Dropdown toggle states
     var posExpanded by remember { mutableStateOf(false) }
@@ -1445,6 +1446,38 @@ fun SettingsScreen(
                                 .testTag("button_image_resolution")
                         ) {
                             Text(imageResolution, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Shutter Speed", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Instant eliminates lag so you don't need to hold the phone.", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF1E293B))
+                                .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                .clickable {
+                                    val nextVal = if (shutterMode == SettingsManager.SHUTTER_MODE_INSTANT) {
+                                        SettingsManager.SHUTTER_MODE_SENSOR
+                                    } else {
+                                        SettingsManager.SHUTTER_MODE_INSTANT
+                                    }
+                                    settingsManager.shutterMode = nextVal
+                                    shutterMode = nextVal
+                                }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                .testTag("button_shutter_mode")
+                        ) {
+                            Text(shutterMode, color = Color(0xFF38BDF8), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
 

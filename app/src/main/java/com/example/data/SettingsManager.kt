@@ -37,7 +37,14 @@ class SettingsManager(context: Context) {
         const val KEY_FLASH_MODE = "flash_mode"
         const val KEY_IMAGE_FORMAT = "image_format"
         const val KEY_IMAGE_RESOLUTION = "image_resolution"
+        const val KEY_SHUTTER_MODE = "shutter_mode"
+        const val SHUTTER_MODE_INSTANT = "Instant (Zero-Lag)"
+        const val SHUTTER_MODE_SENSOR = "Sensor (Full Quality)"
     }
+
+    var shutterMode: String
+        get() = prefs.getString(KEY_SHUTTER_MODE, SHUTTER_MODE_INSTANT) ?: SHUTTER_MODE_INSTANT
+        set(value) = prefs.edit().putString(KEY_SHUTTER_MODE, value).apply()
 
     var imageFormat: String
         get() = prefs.getString(KEY_IMAGE_FORMAT, "WebP") ?: "WebP"

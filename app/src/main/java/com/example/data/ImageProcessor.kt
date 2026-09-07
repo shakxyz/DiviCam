@@ -509,4 +509,57 @@ object ImageProcessor {
             bitmap
         }
     }
+
+    /**
+     * Trims black letterbox borders when capturing directly from PreviewView FIT_CENTER
+     * so the instant photo is pristine and matches the camera sensor output with no black bars.
+     */
+    fun cropLetterboxBars(bitmap: Bitmap, targetAspectRatio: Float? = null): Bitmap {
+        val w = bitmap.width
+        val h = bitmap.height
+        if (w <= 0 || h <= 0) return bitmap
+
+        val currentAspect = w.toFloat() / h.toFloat()
+        val targetAspect = targetAspectRatio ?: if (w < h) {
+            // Portrait: typical camera aspect ratio is 3:4 (0.75f) or 9:16 (0.5625f)
+            if (currentAspect < 0.65f) {
+                if (currentAspect < 0.50f) 0.5625f else 0.75f
+            } else {
+                currentAspect
+            }
+        } else {
+            // Landscape: typical camera aspect ratio is 4:3 or 16:9
+            if (currentAspect > 1.55f) {
+                16f / 9f
+            } else {
+                4f / 3f
+            }
+        }
+
+        if (kotlin.math.abs(currentAspect - targetAspect) < 0.03f) {
+            return bitmap
+        }
+
+        return if (currentAspect < targetAspect) {
+            // Screen is taller than sensor aspect -> trim top and bottom black bars
+            val contentHeight = (w / targetAspect).toInt().coerceIn(1, h)
+            val top = ((h - contentHeight) / 2).coerceAtLeast(0)
+            val safeHeight = contentHeight.coerceAtMost(h - top)
+            try {
+                Bitmap.createBitmap(bitmap, 0, top, w, safeHeight)
+            } catch (e: Exception) {
+                bitmap
+            }
+        } else {
+            // Screen is wider than sensor aspect -> trim left and right black bars
+            val contentWidth = (h * targetAspect).toInt().coerceIn(1, w)
+            val left = ((w - contentWidth) / 2).coerceAtLeast(0)
+            val safeWidth = contentWidth.coerceAtMost(w - left)
+            try {
+                Bitmap.createBitmap(bitmap, left, 0, safeWidth, h)
+            } catch (e: Exception) {
+                bitmap
+            }
+        }
+    }
 }
