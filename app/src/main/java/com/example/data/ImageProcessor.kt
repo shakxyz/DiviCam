@@ -40,7 +40,11 @@ object ImageProcessor {
         }.start()
     }
 
-    fun combineImages(front: Bitmap, back: Bitmap): Bitmap {
+    fun combineImages(
+        front: Bitmap, 
+        back: Bitmap,
+        addStampMargin: Boolean = true
+    ): Bitmap {
         // Target width will be normalized to front image width
         val targetWidth = front.width
         
@@ -50,18 +54,27 @@ object ImageProcessor {
         val scaledBack = Bitmap.createScaledBitmap(back, targetWidth, scaledBackHeight, true)
 
         // Clean modern separator line
-        val dividerHeight = 6
-        val totalHeight = front.height + dividerHeight + scaledBack.height
+        val dividerHeight = 8
+        // Dedicated footer area so stamps and mini-maps NEVER overlap or obscure the 2nd card!
+        val stampMarginHeight = if (addStampMargin) (targetWidth * 0.16f).toInt().coerceAtLeast(160) else 0
+        val totalHeight = front.height + dividerHeight + scaledBack.height + stampMarginHeight
 
         val combined = Bitmap.createBitmap(targetWidth, totalHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(combined)
+
+        // Sleek midnight dark canvas background
+        val bgPaint = Paint().apply {
+            color = Color.parseColor("#0B1120")
+            style = Paint.Style.FILL
+        }
+        canvas.drawRect(0f, 0f, targetWidth.toFloat(), totalHeight.toFloat(), bgPaint)
 
         // 1. Draw Front on top
         canvas.drawBitmap(front, 0f, 0f, null)
 
         // 2. Draw modern separator line
         val dividerPaint = Paint().apply {
-            color = Color.parseColor("#0F172A")
+            color = Color.parseColor("#1E293B")
             style = Paint.Style.FILL
         }
         canvas.drawRect(
@@ -73,7 +86,8 @@ object ImageProcessor {
         )
 
         // 3. Draw Back below divider
-        canvas.drawBitmap(scaledBack, 0f, (front.height + dividerHeight).toFloat(), null)
+        val backTop = (front.height + dividerHeight).toFloat()
+        canvas.drawBitmap(scaledBack, 0f, backTop, null)
 
         return combined
     }
@@ -98,7 +112,9 @@ object ImageProcessor {
         mapBorderEnabled: Boolean = false,
         mapTransparentBg: Boolean = true,
         stampBgOpacity: Float = 0.45f,
-        stampBorderEnabled: Boolean = false
+        stampBorderEnabled: Boolean = false,
+        stampSizeScale: Float = 1.0f,
+        isIdMode: Boolean = false
     ): Bitmap {
         // If master stamp switch is disabled, return clean unedited photo
         if (!enableAllStamps) {
@@ -110,11 +126,15 @@ object ImageProcessor {
         val width = workingBitmap.width
         val height = workingBitmap.height
 
-        // Calculate dynamic sizes based on width (~1.6% width)
-        val baseSize = (width * 0.016f).coerceAtLeast(24f)
-        val largeTextSize = baseSize * 1.25f // For date/time
-        val regularTextSize = baseSize * 0.95f // For GPS & custom text
-        val badgeTextSize = baseSize * 0.78f // For DiviCam branding badge
+        // Calculate dynamic sizes based on width (~1.35% width, adjusted by user size scale)
+        // In ID card mode, automatically apply a compact 0.65x multiplier so stamps never obscure card data
+        val modeScale = if (isIdMode) 0.65f else 1.0f
+        val effectiveScale = (stampSizeScale * modeScale).coerceIn(0.25f, 2.5f)
+
+        val baseSize = (width * 0.0135f * effectiveScale).coerceAtLeast(14f)
+        val largeTextSize = baseSize * 1.15f // For date/time
+        val regularTextSize = baseSize * 0.90f // For GPS & custom text
+        val badgeTextSize = baseSize * 0.72f // For DiviCam branding badge
 
         val colorValue = when (textColorName.lowercase()) {
             "cyan" -> Color.parseColor("#38BDF8")
@@ -181,10 +201,10 @@ object ImageProcessor {
             return workingBitmap
         }
 
-        // Calculate geometry
-        val paddingX = baseSize * 1.0f
-        val paddingY = baseSize * 0.8f
-        val lineSpacing = baseSize * 0.38f
+        // Calculate geometry: snug, refined padding avoiding oversized boxes
+        val paddingX = baseSize * 0.70f
+        val paddingY = baseSize * 0.50f
+        val lineSpacing = baseSize * 0.22f
 
         var maxLineWidth = 0f
         var totalTextHeight = 0f
@@ -207,34 +227,26 @@ object ImageProcessor {
             }
         }
 
-        val mapSize = (width * 0.18f).coerceAtLeast(180f) // map is 18% of photo width
+        val mapSize = (width * 0.12f * effectiveScale).coerceAtLeast(80f) // Sleek, non-intrusive map size
 
-        // 1. Draw Text Watermark PILL
+        // 1. Draw Text Watermark PILL with support for all 9 screen positions
         if (lines.isNotEmpty()) {
             val adjustedRectWidth = maxLineWidth + (paddingX * 2)
             val adjustedRectHeight = totalTextHeight + (paddingY * 2)
-            val margin = width * 0.03f
+            val margin = width * 0.025f
 
-            val rectLeft: Float
-            val rectTop: Float
+            val rectLeft: Float = when (positionName) {
+                "Top-left", "Center-left", "Bottom-left" -> margin
+                "Top-center", "Center", "Bottom-center" -> (width - adjustedRectWidth) / 2f
+                "Top-right", "Center-right", "Bottom-right" -> width - adjustedRectWidth - margin
+                else -> margin
+            }
 
-            when (positionName) {
-                "Top-left" -> {
-                    rectLeft = margin
-                    rectTop = margin
-                }
-                "Top-right" -> {
-                    rectLeft = width - adjustedRectWidth - margin
-                    rectTop = margin
-                }
-                "Bottom-right" -> {
-                    rectLeft = width - adjustedRectWidth - margin
-                    rectTop = height - adjustedRectHeight - margin
-                }
-                else -> { // Default "Bottom-left"
-                    rectLeft = margin
-                    rectTop = height - adjustedRectHeight - margin
-                }
+            val rectTop: Float = when (positionName) {
+                "Top-left", "Top-center", "Top-right" -> margin
+                "Center-left", "Center", "Center-right" -> (height - adjustedRectHeight) / 2f
+                "Bottom-left", "Bottom-center", "Bottom-right" -> height - adjustedRectHeight - margin
+                else -> height - adjustedRectHeight - margin
             }
 
             val alphaInt = (stampBgOpacity * 255).toInt().coerceIn(0, 255)
@@ -245,7 +257,7 @@ object ImageProcessor {
                     isAntiAlias = true
                 }
                 val bgRect = RectF(rectLeft, rectTop, rectLeft + adjustedRectWidth, rectTop + adjustedRectHeight)
-                canvas.drawRoundRect(bgRect, baseSize * 0.5f, baseSize * 0.5f, bgPaint)
+                canvas.drawRoundRect(bgRect, baseSize * 0.45f, baseSize * 0.45f, bgPaint)
 
                 if (stampBorderEnabled) {
                     val borderPaint = Paint().apply {
@@ -254,7 +266,7 @@ object ImageProcessor {
                         strokeWidth = 2f
                         isAntiAlias = true
                     }
-                    canvas.drawRoundRect(bgRect, baseSize * 0.5f, baseSize * 0.5f, borderPaint)
+                    canvas.drawRoundRect(bgRect, baseSize * 0.45f, baseSize * 0.45f, borderPaint)
                 }
             }
 
@@ -269,32 +281,24 @@ object ImageProcessor {
             }
         }
 
-        // 2. Draw Separate MiniMap
+        // 2. Draw Separate MiniMap with support for all 9 screen positions and NO outline
         if (showMiniMap && latitude != null && longitude != null) {
-            val margin = width * 0.03f
+            val margin = width * 0.025f
             val mapContainerWidth = mapSize + (paddingX * 2)
             val mapContainerHeight = mapSize + (paddingY * 2)
 
-            val mapContainerLeft: Float
-            val mapContainerTop: Float
+            val mapContainerLeft: Float = when (miniMapPositionName) {
+                "Top-left", "Center-left", "Bottom-left" -> margin
+                "Top-center", "Center", "Bottom-center" -> (width - mapContainerWidth) / 2f
+                "Top-right", "Center-right", "Bottom-right" -> width - mapContainerWidth - margin
+                else -> width - mapContainerWidth - margin
+            }
 
-            when (miniMapPositionName) {
-                "Top-left" -> {
-                    mapContainerLeft = margin
-                    mapContainerTop = margin
-                }
-                "Top-right" -> {
-                    mapContainerLeft = width - mapContainerWidth - margin
-                    mapContainerTop = margin
-                }
-                "Bottom-right" -> {
-                    mapContainerLeft = width - mapContainerWidth - margin
-                    mapContainerTop = height - mapContainerHeight - margin
-                }
-                else -> {
-                    mapContainerLeft = margin
-                    mapContainerTop = height - mapContainerHeight - margin
-                }
+            val mapContainerTop: Float = when (miniMapPositionName) {
+                "Top-left", "Top-center", "Top-right" -> margin
+                "Center-left", "Center", "Center-right" -> (height - mapContainerHeight) / 2f
+                "Bottom-left", "Bottom-center", "Bottom-right" -> height - mapContainerHeight - margin
+                else -> margin
             }
 
             val mapAlphaInt = if (mapTransparentBg) {
@@ -310,7 +314,7 @@ object ImageProcessor {
                     isAntiAlias = true
                 }
                 val mapContainerRect = RectF(mapContainerLeft, mapContainerTop, mapContainerLeft + mapContainerWidth, mapContainerTop + mapContainerHeight)
-                canvas.drawRoundRect(mapContainerRect, baseSize * 0.5f, baseSize * 0.5f, bgPaint)
+                canvas.drawRoundRect(mapContainerRect, baseSize * 0.45f, baseSize * 0.45f, bgPaint)
             }
 
             val mapLeft = mapContainerLeft + paddingX
@@ -327,9 +331,9 @@ object ImageProcessor {
             }
 
             canvas.save()
-            // Clean square map with NO border at all per user requirement
+            // Clean square map with NO border/outline for a seamless, borderless look
             val clipPath = android.graphics.Path().apply {
-                addRect(mapRect, android.graphics.Path.Direction.CW)
+                addRoundRect(mapRect, baseSize * 0.35f, baseSize * 0.35f, android.graphics.Path.Direction.CW)
             }
             canvas.clipPath(clipPath)
 
@@ -337,7 +341,7 @@ object ImageProcessor {
                 val scaledTile = Bitmap.createScaledBitmap(mapTile, mapSize.toInt(), mapSize.toInt(), true)
                 canvas.drawBitmap(scaledTile, mapLeft, mapTop, mapAlphaPaint)
             } else {
-                // High-fidelity fallback blue digital/radar GPS grid
+                // Digital fallback GPS grid
                 val circlePaint = Paint().apply {
                     color = Color.parseColor("#4D38BDF8")
                     style = Paint.Style.STROKE
@@ -371,17 +375,27 @@ object ImageProcessor {
             val targetRingPaint = Paint().apply {
                 color = Color.parseColor("#8038BDF8")
                 style = Paint.Style.STROKE
-                strokeWidth = 3f
+                strokeWidth = 2.5f
                 isAntiAlias = true
             }
 
             val centerValX = mapLeft + mapSize / 2f
             val centerValY = mapTop + mapSize / 2f
-            canvas.drawCircle(centerValX, centerValY, baseSize * 0.4f, targetRingPaint)
-            canvas.drawCircle(centerValX, centerValY, baseSize * 0.16f, targetPaint)
+            canvas.drawCircle(centerValX, centerValY, baseSize * 0.35f, targetRingPaint)
+            canvas.drawCircle(centerValX, centerValY, baseSize * 0.14f, targetPaint)
 
             canvas.restore()
-            // Strictly NO border or border color around the map square per user requirement
+
+            // Map border outline: only if explicitly enabled (default is NO outline)
+            if (mapBorderEnabled) {
+                val borderPaint = Paint().apply {
+                    color = Color.argb(60, 255, 255, 255)
+                    style = Paint.Style.STROKE
+                    strokeWidth = 1.5f
+                    isAntiAlias = true
+                }
+                canvas.drawRoundRect(mapRect, baseSize * 0.35f, baseSize * 0.35f, borderPaint)
+            }
         }
 
         return workingBitmap

@@ -438,15 +438,24 @@ fun CameraScreen(
                 currentStep = currentStep
             )
 
-            // ON-SCREEN CORNER MINI-MAP (Loaded fast from mobile location, borderless, transparent, OSM tile)
+            // ON-SCREEN CORNER MINI-MAP (Loaded fast from mobile location, borderless with NO outline, transparent, OSM tile)
             if (viewModel.settings.showMiniMap && allStampsEnabled && locationData != null) {
                 val mapPos = viewModel.settings.miniMapPosition
                 val alignment = when (mapPos) {
                     "Top-left" -> Alignment.TopStart
+                    "Top-center" -> Alignment.TopCenter
+                    "Top-right" -> Alignment.TopEnd
+                    "Center-left" -> Alignment.CenterStart
+                    "Center" -> Alignment.Center
+                    "Center-right" -> Alignment.CenterEnd
                     "Bottom-left" -> Alignment.BottomStart
+                    "Bottom-center" -> Alignment.BottomCenter
                     "Bottom-right" -> Alignment.BottomEnd
                     else -> Alignment.TopEnd
                 }
+
+                val currentScale = viewModel.settings.stampSizeScale.coerceIn(0.5f, 1.8f)
+                val mapSizeDp = (84 * currentScale).dp
 
                 Box(
                     modifier = Modifier
@@ -462,20 +471,29 @@ fun CameraScreen(
                         latitude = locationData!!.latitude,
                         longitude = locationData!!.longitude,
                         opacity = viewModel.settings.miniMapOpacity,
+                        sizeDp = mapSizeDp,
                         modifier = Modifier.align(alignment)
                     )
                 }
             }
 
-            // LIVE STAMP HUD ON PREVIEW
+            // LIVE STAMP HUD ON PREVIEW (Supports all 9 positions and dynamic user sizing)
             if (allStampsEnabled) {
                 val stampPos = viewModel.settings.timestampPosition
                 val stampAlignment = when (stampPos) {
                     "Top-left" -> Alignment.TopStart
+                    "Top-center" -> Alignment.TopCenter
                     "Top-right" -> Alignment.TopEnd
+                    "Center-left" -> Alignment.CenterStart
+                    "Center" -> Alignment.Center
+                    "Center-right" -> Alignment.CenterEnd
+                    "Bottom-left" -> Alignment.BottomStart
+                    "Bottom-center" -> Alignment.BottomCenter
                     "Bottom-right" -> Alignment.BottomEnd
                     else -> Alignment.BottomStart
                 }
+
+                val currentScale = viewModel.settings.stampSizeScale.coerceIn(0.5f, 1.8f)
 
                 Box(
                     modifier = Modifier
@@ -489,31 +507,40 @@ fun CameraScreen(
                 ) {
                     Surface(
                         color = Color(0x730F172A),
-                        shape = RoundedCornerShape(10.dp),
+                        shape = RoundedCornerShape((8 * currentScale).dp),
                         modifier = Modifier
                             .align(stampAlignment)
                             .testTag("live_stamp_preview_hud")
                     ) {
-                        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                        Column(
+                            modifier = Modifier.padding(
+                                horizontal = (8 * currentScale).dp,
+                                vertical = (5 * currentScale).dp
+                            )
+                        ) {
                             if (viewModel.settings.showBrandingBadge) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         text = "DIVICAM • divicam.app",
                                         color = Color(0xFF38BDF8),
-                                        fontSize = 10.sp,
+                                        fontSize = (9.5f * currentScale).sp,
                                         fontWeight = FontWeight.Bold,
                                         letterSpacing = 0.5.sp
                                     )
                                 }
                             }
                             if (customText.isNotEmpty()) {
-                                Text(text = customText, color = Color.White, fontSize = 11.sp)
+                                Text(
+                                    text = customText, 
+                                    color = Color.White, 
+                                    fontSize = (10.5f * currentScale).sp
+                                )
                             }
                             if (viewModel.settings.showGpsCoords && locationData != null) {
                                 Text(
                                     text = locationData!!.formattedCoordinates,
                                     color = Color.White.copy(alpha = 0.9f),
-                                    fontSize = 10.sp,
+                                    fontSize = (9.5f * currentScale).sp,
                                     fontWeight = FontWeight.Medium
                                 )
                             }
@@ -1264,6 +1291,7 @@ fun CornerMiniMap(
     latitude: Double,
     longitude: Double,
     opacity: Float,
+    sizeDp: androidx.compose.ui.unit.Dp = 90.dp,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -1277,11 +1305,10 @@ fun CornerMiniMap(
 
     Box(
         modifier = modifier
-            .size(100.dp)
+            .size(sizeDp)
             .alpha(opacity)
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-            .background(Color(0xFF0F172A).copy(alpha = 0.85f))
-            .border(1.dp, Color.White.copy(alpha = 0.3f), androidx.compose.foundation.shape.RoundedCornerShape(8.dp)),
+            .background(Color(0xFF0F172A).copy(alpha = 0.85f)),
         contentAlignment = Alignment.Center
     ) {
         coil.compose.AsyncImage(

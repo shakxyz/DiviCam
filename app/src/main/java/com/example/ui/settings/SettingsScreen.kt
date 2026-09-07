@@ -102,6 +102,7 @@ fun SettingsScreen(
     var mapTransparentBg by remember { mutableStateOf(settingsManager.mapTransparentBg) }
     var stampBackgroundOpacity by remember { mutableFloatStateOf(settingsManager.stampBackgroundOpacity) }
     var stampBorderEnabled by remember { mutableStateOf(settingsManager.stampBorderEnabled) }
+    var stampSizeScale by remember { mutableFloatStateOf(settingsManager.stampSizeScale) }
     var showBrandingBadge by remember { mutableStateOf(settingsManager.showBrandingBadge) }
     var imageFormat by remember { mutableStateOf(settingsManager.imageFormat) }
     var imageResolution by remember { mutableStateOf(settingsManager.imageResolution) }
@@ -202,6 +203,8 @@ fun SettingsScreen(
                             mapTransparentBg = true
                             stampBackgroundOpacity = 0.45f
                             stampBorderEnabled = false
+                            settingsManager.stampSizeScale = 1.0f
+                            stampSizeScale = 1.0f
                             showBrandingBadge = true
                         },
                         modifier = Modifier.testTag("reset_settings_button")
@@ -467,8 +470,8 @@ fun SettingsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Map Border", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                                Text("Turn on/off boundary stroke for a borderless transparent look.", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                                Text("Map Border (Outline)", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Clean borderless look with no outline (keep OFF for no outline look).", color = Color(0xFF94A3B8), fontSize = 12.sp)
                             }
                             Switch(
                                 checked = mapBorderEnabled,
@@ -558,7 +561,7 @@ fun SettingsScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text("Map Position", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                                Text("Choose corner to place the stamped mini-map.", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                                Text("Place mini-map anywhere: 9 positions across corners, edges, or center.", color = Color(0xFF94A3B8), fontSize = 12.sp)
                             }
                             Box {
                                 Row(
@@ -1225,7 +1228,89 @@ fun SettingsScreen(
                         }
                     }
 
-                    // Timestamp Placement Position
+                    // Stamp Size & Scale Control: Full control over big/small size
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Stamp Size & Scale", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Full control: make stamps small or large to fit anywhere.", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                            }
+                            Text(
+                                text = "${(stampSizeScale * 100).toInt()}%",
+                                color = Color(0xFF38BDF8),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        // Quick size presets
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "Tiny" to 0.5f,
+                                "Small" to 0.75f,
+                                "Normal" to 1.0f,
+                                "Large" to 1.25f,
+                                "Max" to 1.5f
+                            ).forEach { (label, scale) ->
+                                val isSelected = kotlin.math.abs(stampSizeScale - scale) < 0.05f
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (isSelected) Color(0xFF38BDF8) else Color(0xFF1E293B))
+                                        .border(
+                                            1.dp, 
+                                            if (isSelected) Color(0xFF38BDF8) else Color.White.copy(alpha = 0.08f), 
+                                            RoundedCornerShape(6.dp)
+                                        )
+                                        .clickable {
+                                            stampSizeScale = scale
+                                            settingsManager.stampSizeScale = scale
+                                        }
+                                        .padding(vertical = 7.dp)
+                                        .testTag("preset_stamp_scale_$label"),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        color = if (isSelected) Color(0xFF0F172A) else Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+
+                        Slider(
+                            value = stampSizeScale,
+                            onValueChange = {
+                                stampSizeScale = it
+                                settingsManager.stampSizeScale = it
+                            },
+                            valueRange = 0.4f..1.8f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color.White,
+                                activeTrackColor = Color(0xFF38BDF8),
+                                inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                            ),
+                            modifier = Modifier.fillMaxWidth().testTag("slider_stamp_size_scale")
+                        )
+                    }
+
+                    // Stamp Placement Position: 9 positions
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1234,8 +1319,8 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Timestamp Corner", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                            Text("Anchor corner for date/time and GPS text.", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                            Text("Stamp Position", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Place stamps anywhere: 9 positions across corners, edges, or center.", color = Color(0xFF94A3B8), fontSize = 12.sp)
                         }
                         Box {
                             Row(

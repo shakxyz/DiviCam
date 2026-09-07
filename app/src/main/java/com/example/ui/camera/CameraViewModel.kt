@@ -200,8 +200,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                     val norm1 = ImageProcessor.normalizeResolution(photo1, maxDim)
                     val norm2 = ImageProcessor.normalizeResolution(photo2, maxDim)
 
-                    // Combine vertically (Front on top, Back on bottom)
-                    val combined = ImageProcessor.combineImages(norm1, norm2)
+                    // Combine vertically (Front on top, Back on bottom) with dedicated margin for stamps in ID mode
+                    val isId = (cameraMode.value == "ID")
+                    val combined = ImageProcessor.combineImages(norm1, norm2, addStampMargin = isId)
 
                     val finalBitmap = if (applyStamps && settings.enableAllStamps) {
                         val timestampText = DateTimeUtils.formatTimestamp(
@@ -233,7 +234,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                             mapBorderEnabled = settings.mapBorderEnabled,
                             mapTransparentBg = settings.mapTransparentBg,
                             stampBgOpacity = settings.stampBackgroundOpacity,
-                            stampBorderEnabled = settings.stampBorderEnabled
+                            stampBorderEnabled = settings.stampBorderEnabled,
+                            stampSizeScale = settings.stampSizeScale,
+                            isIdMode = isId
                         )
                     } else {
                         combined
@@ -260,7 +263,8 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         val front = _frontImage.value ?: return
         val back = _backImage.value ?: return
 
-        val combined = ImageProcessor.combineImages(front, back)
+        // Combine ID card images with dedicated footer margin so the 2nd card is NEVER covered
+        val combined = ImageProcessor.combineImages(front, back, addStampMargin = true)
 
         val timestampText = DateTimeUtils.formatTimestamp(
             Date(),
@@ -292,7 +296,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             mapBorderEnabled = settings.mapBorderEnabled,
             mapTransparentBg = settings.mapTransparentBg,
             stampBgOpacity = settings.stampBackgroundOpacity,
-            stampBorderEnabled = settings.stampBorderEnabled
+            stampBorderEnabled = settings.stampBorderEnabled,
+            stampSizeScale = settings.stampSizeScale,
+            isIdMode = true
         )
 
         // Exact naming requested: IDCAM in ID card mode
@@ -336,7 +342,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             mapBorderEnabled = settings.mapBorderEnabled,
             mapTransparentBg = settings.mapTransparentBg,
             stampBgOpacity = settings.stampBackgroundOpacity,
-            stampBorderEnabled = settings.stampBorderEnabled
+            stampBorderEnabled = settings.stampBorderEnabled,
+            stampSizeScale = settings.stampSizeScale,
+            isIdMode = false
         )
 
         // Exact naming requested: DiviCam in single mode

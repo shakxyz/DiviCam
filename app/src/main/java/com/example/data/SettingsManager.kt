@@ -38,9 +38,14 @@ class SettingsManager(context: Context) {
         const val KEY_IMAGE_FORMAT = "image_format"
         const val KEY_IMAGE_RESOLUTION = "image_resolution"
         const val KEY_SHUTTER_MODE = "shutter_mode"
+        const val KEY_STAMP_SIZE_SCALE = "stamp_size_scale"
         const val SHUTTER_MODE_INSTANT = "Instant (Zero-Lag)"
         const val SHUTTER_MODE_SENSOR = "Sensor (Full Quality)"
     }
+
+    var stampSizeScale: Float
+        get() = prefs.getFloat(KEY_STAMP_SIZE_SCALE, 1.0f)
+        set(value) = prefs.edit().putFloat(KEY_STAMP_SIZE_SCALE, value).apply()
 
     var shutterMode: String
         get() = prefs.getString(KEY_SHUTTER_MODE, SHUTTER_MODE_INSTANT) ?: SHUTTER_MODE_INSTANT
@@ -167,7 +172,17 @@ class SettingsManager(context: Context) {
         set(value) = prefs.edit().putString(KEY_CAMERA_MODE, value).apply()
 
     fun getAllColors(): List<String> = listOf("White", "Cyan", "Yellow", "Gold", "Black")
-    fun getAllPositions(): List<String> = listOf("Bottom-left", "Bottom-right", "Top-left", "Top-right")
+    fun getAllPositions(): List<String> = listOf(
+        "Bottom-left",
+        "Bottom-center",
+        "Bottom-right",
+        "Top-left",
+        "Top-center",
+        "Top-right",
+        "Center-left",
+        "Center",
+        "Center-right"
+    )
     fun getAllDateFormats(): List<String> = listOf("DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD")
     fun getAllCoordFormats(): List<String> = listOf("Decimal", "DMS", "Compact", "Grid", "Short")
     fun getAllCoordPrefixes(): List<String> = listOf("GPS", "LAT/LON", "COORD", "None")
