@@ -35,6 +35,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -62,26 +63,35 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.GpsFixed
+import androidx.compose.material.icons.filled.GpsNotFixed
 import androidx.compose.material.icons.filled.GpsOff
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -89,6 +99,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -113,7 +124,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.example.utils.DateTimeUtils
 import com.example.utils.PermissionUtils
+import java.util.Date
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -153,6 +166,25 @@ fun CameraScreen(
     var activeCamera by remember { mutableStateOf<androidx.camera.core.Camera?>(null) }
     var shutterFlash by remember { mutableStateOf(false) }
     var frozenBitmap by remember { mutableStateOf<Bitmap?>(null) }
+
+    val currentStampScale by viewModel.currentStampScale.collectAsState()
+    val currentMapScale by viewModel.currentMapScale.collectAsState()
+    var showQuickSizeSheet by remember { mutableStateOf(false) }
+
+    var currentTimeMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            currentTimeMillis = System.currentTimeMillis()
+            delay(1000)
+        }
+    }
+    val liveTimestamp = remember(currentTimeMillis, viewModel.settings.dateFormat, viewModel.settings.isTimeFormat24h) {
+        DateTimeUtils.formatTimestamp(
+            Date(currentTimeMillis),
+            viewModel.settings.dateFormat,
+            viewModel.settings.isTimeFormat24h
+        )
+    }
 
     LaunchedEffect(currentStep) {
         frozenBitmap = null
@@ -438,7 +470,7 @@ fun CameraScreen(
                 currentStep = currentStep
             )
 
-            // ON-SCREEN CORNER MINI-MAP (Loaded fast from mobile location, borderless with NO outline, transparent, OSM tile)
+            // ON-SCREEN CORNER MINI-MAP (Proportional sizing, matching captured photo 1:1)
             if (viewModel.settings.showMiniMap && allStampsEnabled && locationData != null) {
                 val mapPos = viewModel.settings.miniMapPosition
                 val alignment = when (mapPos) {
@@ -454,17 +486,19 @@ fun CameraScreen(
                     else -> Alignment.TopEnd
                 }
 
-                val currentScale = viewModel.settings.mapSizeScale.coerceIn(0.4f, 2.2f)
-                val mapSizeDp = (84 * currentScale).dp
+                val modeScale = if (cameraMode == "ID") 0.90f else 1.0f
+                val effectiveMapScale = (currentMapScale * modeScale).coerceIn(0.25f, 2.8f)
+                val mapSizeDp = (maxWidth * 0.22f * effectiveMapScale).coerceAtLeast(60.dp)
+                val marginDp = (maxWidth * 0.025f).coerceAtLeast(10.dp)
 
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(
-                            top = if (mapPos.startsWith("Top")) 84.dp else 16.dp,
-                            bottom = if (mapPos.startsWith("Bottom")) 190.dp else 16.dp,
-                            start = 16.dp,
-                            end = 16.dp
+                            top = if (mapPos.startsWith("Top")) 78.dp else marginDp,
+                            bottom = if (mapPos.startsWith("Bottom")) 150.dp else marginDp,
+                            start = marginDp,
+                            end = marginDp
                         )
                 ) {
                     CornerMiniMap(
@@ -474,12 +508,14 @@ fun CameraScreen(
                         sizeDp = mapSizeDp,
                         hasBorder = viewModel.settings.mapBorderEnabled,
                         transparentBg = viewModel.settings.mapTransparentBg,
-                        modifier = Modifier.align(alignment)
+                        modifier = Modifier
+                            .align(alignment)
+                            .clickable { showQuickSizeSheet = !showQuickSizeSheet }
                     )
                 }
             }
 
-            // LIVE STAMP HUD ON PREVIEW (Supports all 9 positions and dynamic user sizing)
+            // LIVE STAMP HUD ON PREVIEW (Faithful 1:1 preview of burned watermark)
             if (allStampsEnabled) {
                 val stampPos = viewModel.settings.timestampPosition
                 val stampAlignment = when (stampPos) {
@@ -495,54 +531,89 @@ fun CameraScreen(
                     else -> Alignment.BottomStart
                 }
 
-                val currentScale = viewModel.settings.stampSizeScale.coerceIn(0.5f, 1.8f)
+                val modeScale = if (cameraMode == "ID") 0.90f else 1.0f
+                val effectiveStampScale = (currentStampScale * modeScale).coerceIn(0.25f, 2.8f)
+                val baseSizeSp = (maxWidth.value * 0.022f * effectiveStampScale).coerceAtLeast(9f)
+                val largeTextSp = (baseSizeSp * 1.18f).sp
+                val regularTextSp = (baseSizeSp * 0.92f).sp
+                val badgeTextSp = (baseSizeSp * 0.74f).sp
+
+                val paddingXDp = (baseSizeSp * 0.70f).dp
+                val paddingYDp = (baseSizeSp * 0.50f).dp
+                val cornerRadiusDp = (baseSizeSp * 0.45f).dp
+                val marginDp = (maxWidth * 0.025f).coerceAtLeast(10.dp)
+
+                val stampColor = when (viewModel.settings.textColor.lowercase()) {
+                    "cyan" -> Color(0xFF38BDF8)
+                    "yellow" -> Color(0xFFFDE047)
+                    "gold" -> Color(0xFFF59E0B)
+                    "black" -> Color.Black
+                    "red" -> Color(0xFFEF4444)
+                    else -> Color.White
+                }
+                val bgAlpha = viewModel.settings.stampBackgroundOpacity.coerceIn(0f, 1f)
+                val bgColor = Color(0xFF0F172A).copy(alpha = bgAlpha)
 
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(
-                            top = if (stampPos.startsWith("Top")) 80.dp else 16.dp,
-                            bottom = if (stampPos.startsWith("Bottom")) 180.dp else 16.dp,
-                            start = 16.dp,
-                            end = 16.dp
+                            top = if (stampPos.startsWith("Top")) 78.dp else marginDp,
+                            bottom = if (stampPos.startsWith("Bottom")) 150.dp else marginDp,
+                            start = marginDp,
+                            end = marginDp
                         )
                 ) {
                     Surface(
-                        color = Color(0x730F172A),
-                        shape = RoundedCornerShape((8 * currentScale).dp),
+                        color = bgColor,
+                        shape = RoundedCornerShape(cornerRadiusDp),
+                        border = if (viewModel.settings.stampBorderEnabled) BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)) else null,
                         modifier = Modifier
                             .align(stampAlignment)
+                            .clickable { showQuickSizeSheet = !showQuickSizeSheet }
                             .testTag("live_stamp_preview_hud")
                     ) {
                         Column(
                             modifier = Modifier.padding(
-                                horizontal = (8 * currentScale).dp,
-                                vertical = (5 * currentScale).dp
-                            )
+                                horizontal = paddingXDp,
+                                vertical = paddingYDp
+                            ),
+                            verticalArrangement = Arrangement.spacedBy((baseSizeSp * 0.22f).dp)
                         ) {
                             if (viewModel.settings.showBrandingBadge) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "DIVICAM • divicam.app",
-                                        color = Color(0xFF38BDF8),
-                                        fontSize = (9.5f * currentScale).sp,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.5.sp
-                                    )
-                                }
+                                Text(
+                                    text = "DIVICAM • divicam.app",
+                                    color = Color(0xFF38BDF8),
+                                    fontSize = badgeTextSp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                )
                             }
                             if (customText.isNotEmpty()) {
                                 Text(
-                                    text = customText, 
-                                    color = Color.White, 
-                                    fontSize = (10.5f * currentScale).sp
+                                    text = customText,
+                                    color = stampColor,
+                                    fontSize = regularTextSp
+                                )
+                            }
+                            Text(
+                                text = liveTimestamp,
+                                color = stampColor,
+                                fontSize = largeTextSp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (viewModel.settings.showGpsAddress && locationData?.address?.isNotEmpty() == true) {
+                                Text(
+                                    text = locationData!!.address,
+                                    color = stampColor,
+                                    fontSize = regularTextSp
                                 )
                             }
                             if (viewModel.settings.showGpsCoords && locationData != null) {
                                 Text(
                                     text = locationData!!.formattedCoordinates,
-                                    color = Color.White.copy(alpha = 0.9f),
-                                    fontSize = (9.5f * currentScale).sp,
+                                    color = stampColor.copy(alpha = 0.9f),
+                                    fontSize = regularTextSp,
                                     fontWeight = FontWeight.Medium
                                 )
                             }
@@ -551,7 +622,7 @@ fun CameraScreen(
                 }
             }
 
-            // Top Header Controls: Compact, streamlined, and non-intrusive
+            // Top Header Controls: Clean, spacious, modern layout with no overlapping elements
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -561,7 +632,7 @@ fun CameraScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -577,77 +648,83 @@ fun CameraScreen(
                         label = "gps_spinner"
                     )
 
-                    // DiviCam Brand Header + Interactive GPS Refresh Button
+                    val hasGps = locationPermissionGranted && locationData != null
+
+                    // Left Side: Dedicated GPS button + Pre-capture Sizing button (DIVICAM text removed for space)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "DIVI",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 15.sp,
-                                letterSpacing = 0.5.sp,
-                                color = Color.White
-                            )
-                            Text(
-                                text = "CAM",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 15.sp,
-                                letterSpacing = 0.5.sp,
-                                color = Color(0xFF38BDF8)
+                        // GPS Button (Circular icon button with instant status feedback)
+                        IconButton(
+                            onClick = {
+                                if (locationPermissionGranted) {
+                                    viewModel.refreshLocation()
+                                    Toast.makeText(
+                                        context,
+                                        if (locationData != null) "GPS refreshed: ${locationData?.formattedCoordinates}" else "Refreshing GPS position...",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } else {
+                                    requestLocationLauncher.launch(PermissionUtils.LOCATION_PERMISSIONS)
+                                }
+                            },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(if (hasGps) Color(0xFF064E3B).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.55f))
+                                .border(
+                                    1.dp,
+                                    if (hasGps) Color(0xFF10B981).copy(alpha = 0.7f) else Color.White.copy(alpha = 0.25f),
+                                    CircleShape
+                                )
+                                .testTag("refresh_gps_button")
+                        ) {
+                            Icon(
+                                imageVector = if (hasGps) Icons.Default.GpsFixed else Icons.Default.GpsNotFixed,
+                                contentDescription = if (hasGps) "GPS Active (Tap to refresh)" else "Tap to acquire GPS",
+                                tint = if (hasGps) Color(0xFF34D399) else Color(0xFFF87171),
+                                modifier = Modifier
+                                    .size(19.dp)
+                                    .graphicsLayer {
+                                        if (isRefreshingGps) rotationZ = rotationAngle
+                                    }
                             )
                         }
 
-                        val hasGps = locationPermissionGranted && locationData != null
-                        // Dedicated Refresh GPS Button (Direct UI/UX control)
-                        Box(
+                        // Pre-Capture Stamp & Map Sizing Button
+                        Row(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(if (hasGps) Color(0xFF064E3B).copy(alpha = 0.8f) else Color(0xFF450A0A).copy(alpha = 0.8f))
+                                .height(36.dp)
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(if (showQuickSizeSheet) Color(0xFF0284C7).copy(alpha = 0.9f) else Color.Black.copy(alpha = 0.55f))
                                 .border(
                                     1.dp,
-                                    if (hasGps) Color(0xFF10B981).copy(alpha = 0.6f) else Color(0xFFEF4444).copy(alpha = 0.6f),
-                                    RoundedCornerShape(16.dp)
+                                    if (showQuickSizeSheet) Color(0xFF38BDF8) else Color.White.copy(alpha = 0.25f),
+                                    RoundedCornerShape(18.dp)
                                 )
-                                .clickable {
-                                    if (locationPermissionGranted) {
-                                        viewModel.refreshLocation()
-                                        Toast.makeText(context, "Refreshing GPS position...", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        requestLocationLauncher.launch(PermissionUtils.LOCATION_PERMISSIONS)
-                                    }
-                                }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                                .testTag("refresh_gps_button"),
-                            contentAlignment = Alignment.Center
+                                .clickable { showQuickSizeSheet = !showQuickSizeSheet }
+                                .padding(horizontal = 9.dp)
+                                .testTag("quick_size_button"),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = "Refresh GPS",
-                                    tint = if (hasGps) Color(0xFF34D399) else Color(0xFFF87171),
-                                    modifier = Modifier
-                                        .size(13.dp)
-                                        .graphicsLayer {
-                                            if (isRefreshingGps) rotationZ = rotationAngle
-                                        }
-                                )
-                                Text(
-                                    text = if (isRefreshingGps) "Updating..." else if (hasGps) "GPS Ready" else "Tap for GPS",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (hasGps) Color(0xFFD1FAE5) else Color(0xFFFEE2E2)
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = "Adjust Stamp & Map Size",
+                                tint = if (showQuickSizeSheet) Color.White else Color(0xFF38BDF8),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "${(currentStampScale * 100).toInt()}%",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
 
-                    // Top Bar Action Buttons (Compact 34dp circular icons)
+                    // Right Side: Action buttons with generous spacing so Settings is always clearly visible
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -671,9 +748,10 @@ fun CameraScreen(
                                 flashState = newVal
                             },
                             modifier = Modifier
-                                .size(34.dp)
+                                .size(36.dp)
                                 .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.45f))
+                                .background(Color.Black.copy(alpha = 0.55f))
+                                .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
                                 .testTag("quick_flash_toggle_button")
                         ) {
                             Icon(
@@ -700,15 +778,16 @@ fun CameraScreen(
                                 ).show()
                             },
                             modifier = Modifier
-                                .size(34.dp)
+                                .size(36.dp)
                                 .clip(CircleShape)
-                                .background(if (isFront) Color(0xFF0284C7).copy(alpha = 0.8f) else Color.Black.copy(alpha = 0.45f))
+                                .background(if (isFront) Color(0xFF0284C7).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.55f))
+                                .border(1.dp, if (isFront) Color(0xFF38BDF8) else Color.White.copy(alpha = 0.25f), CircleShape)
                                 .testTag("flip_camera_button")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Cached,
                                 contentDescription = "Flip camera",
-                                tint = if (isFront) Color.White else Color.White.copy(alpha = 0.85f),
+                                tint = Color.White,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -719,22 +798,22 @@ fun CameraScreen(
 
                         Row(
                             modifier = Modifier
-                                .height(34.dp)
-                                .clip(RoundedCornerShape(17.dp))
+                                .height(36.dp)
+                                .clip(RoundedCornerShape(18.dp))
                                 .background(
                                     if (isInstantMode) Color(0xFF0284C7).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.55f)
                                 )
                                 .border(
                                     1.dp,
                                     if (isInstantMode) Color(0xFF38BDF8) else Color.White.copy(alpha = 0.25f),
-                                    RoundedCornerShape(17.dp)
+                                    RoundedCornerShape(18.dp)
                                 )
                                 .clickable {
                                     val newMode = viewModel.toggleShutterMode()
                                     val modeLabel = if (newMode == SettingsManager.SHUTTER_MODE_INSTANT) "Instant (Zero-Lag)" else "Sensor (Full Quality)"
                                     Toast.makeText(context, "Shutter: $modeLabel", Toast.LENGTH_SHORT).show()
                                 }
-                                .padding(horizontal = 10.dp)
+                                .padding(horizontal = 9.dp)
                                 .testTag("quick_toggle_shutter_mode_button"),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -742,32 +821,200 @@ fun CameraScreen(
                                 imageVector = if (isInstantMode) Icons.Default.FlashOn else Icons.Default.PhotoCamera,
                                 contentDescription = if (isInstantMode) "Switch to Sensor shutter" else "Switch to Instant shutter",
                                 tint = if (isInstantMode) Color(0xFFFDE047) else Color(0xFF38BDF8),
-                                modifier = Modifier.size(16.dp)
+                                modifier = Modifier.size(15.dp)
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
                             Text(
                                 text = if (isInstantMode) "INSTANT" else "SENSOR",
                                 color = Color.White,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 0.5.sp
                             )
                         }
 
-                        // Settings screen button
+                        // Prominent Settings Button: Fully visible, clear contrast, spacious
                         IconButton(
                             onClick = onNavigateToSettings,
                             modifier = Modifier
-                                .size(34.dp)
+                                .size(36.dp)
                                 .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.45f))
+                                .background(Color.Black.copy(alpha = 0.55f))
+                                .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
                                 .testTag("settings_button")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Settings,
                                 contentDescription = "Settings",
                                 tint = Color.White,
-                                modifier = Modifier.size(17.dp)
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Pre-Capture Interactive Sizing Card (Animated dropdown below top bar)
+                AnimatedVisibility(
+                    visible = showQuickSizeSheet,
+                    enter = fadeIn() + slideInVertically { -it / 2 },
+                    exit = fadeOut() + slideOutVertically { -it / 2 }
+                ) {
+                    Card(
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xF20B132B)),
+                        border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                            .testTag("quick_sizing_panel")
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Tune,
+                                        contentDescription = null,
+                                        tint = Color(0xFF38BDF8),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Live Stamp & Map Sizing",
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        fontSize = 15.sp
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { showQuickSizeSheet = false },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Close,
+                                        contentDescription = "Close",
+                                        tint = Color.White.copy(alpha = 0.8f),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Text Stamp Size Presets & Slider
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.TextFields, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(15.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Text Stamp Size", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                                Text("${(currentStampScale * 100).toInt()}%", color = Color(0xFF38BDF8), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    "Small" to 0.8f,
+                                    "Normal" to 1.0f,
+                                    "Large" to 1.4f,
+                                    "Max" to 1.8f
+                                ).forEach { (label, scale) ->
+                                    val isSelected = kotlin.math.abs(currentStampScale - scale) < 0.15f
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = { viewModel.updateStampScale(scale) },
+                                        label = { Text(label, fontSize = 11.sp) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = Color(0xFF0284C7),
+                                            selectedLabelColor = Color.White,
+                                            containerColor = Color(0xFF1E293B),
+                                            labelColor = Color(0xFFCBD5E1)
+                                        ),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                            Slider(
+                                value = currentStampScale,
+                                onValueChange = { viewModel.updateStampScale(it) },
+                                valueRange = 0.6f..2.2f,
+                                steps = 15,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color(0xFF38BDF8),
+                                    activeTrackColor = Color(0xFF0284C7),
+                                    inactiveTrackColor = Color(0xFF334155)
+                                )
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // Mini-Map Size Presets & Slider
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Map, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(15.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Mini-Map Size", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                                Text("${(currentMapScale * 100).toInt()}%", color = Color(0xFF38BDF8), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    "Small" to 0.8f,
+                                    "Normal" to 1.0f,
+                                    "Large" to 1.4f,
+                                    "Max" to 1.8f
+                                ).forEach { (label, scale) ->
+                                    val isSelected = kotlin.math.abs(currentMapScale - scale) < 0.15f
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = { viewModel.updateMapScale(scale) },
+                                        label = { Text(label, fontSize = 11.sp) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = Color(0xFF0284C7),
+                                            selectedLabelColor = Color.White,
+                                            containerColor = Color(0xFF1E293B),
+                                            labelColor = Color(0xFFCBD5E1)
+                                        ),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                            Slider(
+                                value = currentMapScale,
+                                onValueChange = { viewModel.updateMapScale(it) },
+                                valueRange = 0.6f..2.2f,
+                                steps = 15,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color(0xFF38BDF8),
+                                    activeTrackColor = Color(0xFF0284C7),
+                                    inactiveTrackColor = Color(0xFF334155)
+                                )
+                            )
+
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Live preview updates instantly. What you see is what gets stamped.",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }

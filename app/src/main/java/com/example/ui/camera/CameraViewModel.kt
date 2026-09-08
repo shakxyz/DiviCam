@@ -158,6 +158,18 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         return next
     }
 
+    fun updateStampScale(scale: Float) {
+        val clamped = scale.coerceIn(0.6f, 2.5f)
+        settings.stampSizeScale = clamped
+        _currentStampScale.value = clamped
+    }
+
+    fun updateMapScale(scale: Float) {
+        val clamped = scale.coerceIn(0.6f, 2.5f)
+        settings.mapSizeScale = clamped
+        _currentMapScale.value = clamped
+    }
+
     fun setCameraMode(mode: String) {
         settings.cameraMode = mode
         _cameraMode.value = mode
