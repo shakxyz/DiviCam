@@ -84,6 +84,7 @@ fun AppNavigation(modifier: Modifier = Modifier) {
 
             PreviewScreen(
                 fileUri = fileUri,
+                viewModel = cameraViewModel,
                 onRetakeAll = {
                     cameraViewModel.resetIdFlow()
                     navController.navigate("camera") {

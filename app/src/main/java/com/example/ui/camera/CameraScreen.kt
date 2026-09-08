@@ -183,7 +183,7 @@ fun CameraScreen(
     val previewView = remember {
         PreviewView(context).apply {
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-            scaleType = PreviewView.ScaleType.FIT_CENTER
+            scaleType = PreviewView.ScaleType.FILL_CENTER
         }
     }
 
@@ -713,29 +713,44 @@ fun CameraScreen(
                             )
                         }
 
-                        // Quick Master Stamp Toggle (Stamps ON / OFF)
-                        IconButton(
-                            onClick = {
-                                val state = viewModel.toggleAllStamps()
-                                Toast.makeText(
-                                    context,
-                                    if (state) "Stamps ON" else "Stamps OFF",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            },
+                        // Quick Shutter Mode Toggle (Instant vs Sensor)
+                        val currentShutterMode by viewModel.shutterMode.collectAsState()
+                        val isInstantMode = (currentShutterMode == SettingsManager.SHUTTER_MODE_INSTANT)
+
+                        Row(
                             modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
+                                .height(34.dp)
+                                .clip(RoundedCornerShape(17.dp))
                                 .background(
-                                    if (allStampsEnabled) Color(0xFF0284C7).copy(alpha = 0.8f) else Color.Black.copy(alpha = 0.45f)
+                                    if (isInstantMode) Color(0xFF0284C7).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.55f)
                                 )
-                                .testTag("quick_toggle_stamps_button")
+                                .border(
+                                    1.dp,
+                                    if (isInstantMode) Color(0xFF38BDF8) else Color.White.copy(alpha = 0.25f),
+                                    RoundedCornerShape(17.dp)
+                                )
+                                .clickable {
+                                    val newMode = viewModel.toggleShutterMode()
+                                    val modeLabel = if (newMode == SettingsManager.SHUTTER_MODE_INSTANT) "Instant (Zero-Lag)" else "Sensor (Full Quality)"
+                                    Toast.makeText(context, "Shutter: $modeLabel", Toast.LENGTH_SHORT).show()
+                                }
+                                .padding(horizontal = 10.dp)
+                                .testTag("quick_toggle_shutter_mode_button"),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Layers,
-                                contentDescription = if (allStampsEnabled) "Turn stamps off" else "Turn stamps on",
-                                tint = if (allStampsEnabled) Color(0xFF38BDF8) else Color.White.copy(alpha = 0.45f),
-                                modifier = Modifier.size(17.dp)
+                                imageVector = if (isInstantMode) Icons.Default.FlashOn else Icons.Default.PhotoCamera,
+                                contentDescription = if (isInstantMode) "Switch to Sensor shutter" else "Switch to Instant shutter",
+                                tint = if (isInstantMode) Color(0xFFFDE047) else Color(0xFF38BDF8),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isInstantMode) "INSTANT" else "SENSOR",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp
                             )
                         }
 
@@ -1091,10 +1106,9 @@ fun CameraScreen(
                                         if (previewFrame != null) {
                                             // INSTANT ZERO-SHUTTER-LAG CAPTURE:
                                             // The camera viewfinder frame at t=0ms is acquired immediately (<15ms).
-                                            // User NEVER has to hold their phone waiting for 3-4 seconds!
-                                            val cleanFrame = ImageProcessor.cropLetterboxBars(previewFrame)
-                                            frozenBitmap = cleanFrame
-                                            viewModel.handlePhotoCaptured(cleanFrame, screenWidthPx, screenHeightPx)
+                                            // Viewfinder frame directly matches screen boundaries 1:1 with zero crop distortion.
+                                            frozenBitmap = previewFrame
+                                            viewModel.handlePhotoCaptured(previewFrame, screenWidthPx, screenHeightPx)
                                         } else {
                                             // Fallback or explicit Sensor quality capture
                                             try {

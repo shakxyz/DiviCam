@@ -58,6 +58,9 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     private val _enableAllStamps = MutableStateFlow(settings.enableAllStamps)
     val enableAllStamps: StateFlow<Boolean> = _enableAllStamps.asStateFlow()
 
+    private val _shutterMode = MutableStateFlow(settings.shutterMode)
+    val shutterMode: StateFlow<String> = _shutterMode.asStateFlow()
+
     private val _cameraPermissionGranted = MutableStateFlow(false)
     val cameraPermissionGranted: StateFlow<Boolean> = _cameraPermissionGranted.asStateFlow()
 
@@ -66,6 +69,36 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _navigationToPreview = MutableStateFlow<Uri?>(null)
     val navigationToPreview: StateFlow<Uri?> = _navigationToPreview.asStateFlow()
+
+    // Stores clean un-stamped bitmap of the latest capture for post-capture stamp sizing
+    var lastCapturedCleanBitmap: Bitmap? = null
+        private set
+    var lastCaptureIsIdMode: Boolean = false
+        private set
+    var lastCaptureTimestamp: String = ""
+        private set
+    var lastCaptureAddress: String = ""
+        private set
+    var lastCaptureCoords: String = ""
+        private set
+    var lastCaptureLat: Double? = null
+        private set
+    var lastCaptureLng: Double? = null
+        private set
+    var lastCaptureCustomText: String = ""
+        private set
+
+    private val _previewImageUri = MutableStateFlow<Uri?>(null)
+    val previewImageUri: StateFlow<Uri?> = _previewImageUri.asStateFlow()
+
+    private val _currentStampScale = MutableStateFlow(settings.stampSizeScale)
+    val currentStampScale: StateFlow<Float> = _currentStampScale.asStateFlow()
+
+    private val _currentMapScale = MutableStateFlow(settings.mapSizeScale)
+    val currentMapScale: StateFlow<Float> = _currentMapScale.asStateFlow()
+
+    private val _isRestamping = MutableStateFlow(false)
+    val isRestamping: StateFlow<Boolean> = _isRestamping.asStateFlow()
 
     init {
         checkPermissions()
@@ -111,6 +144,17 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         val next = !settings.enableAllStamps
         settings.enableAllStamps = next
         _enableAllStamps.value = next
+        return next
+    }
+
+    fun toggleShutterMode(): String {
+        val next = if (settings.shutterMode == SettingsManager.SHUTTER_MODE_INSTANT) {
+            SettingsManager.SHUTTER_MODE_SENSOR
+        } else {
+            SettingsManager.SHUTTER_MODE_INSTANT
+        }
+        settings.shutterMode = next
+        _shutterMode.value = next
         return next
     }
 
@@ -250,6 +294,16 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                         customName = "${prefix}_${System.currentTimeMillis()}",
                         format = settings.imageFormat
                     )
+                    lastCapturedCleanBitmap = combined
+                    lastCaptureIsIdMode = isId
+                    lastCaptureTimestamp = DateTimeUtils.formatTimestamp(Date(), settings.dateFormat, settings.isTimeFormat24h)
+                    val locInfo = _locationData.value
+                    lastCaptureAddress = if (locInfo != null) locInfo.address else "Location unavailable"
+                    lastCaptureCoords = if (locInfo != null) locInfo.formattedCoordinates else "Coordinates unavailable"
+                    lastCaptureLat = locInfo?.latitude
+                    lastCaptureLng = locInfo?.longitude
+                    lastCaptureCustomText = _customText.value
+                    _previewImageUri.value = uri
                     _navigationToPreview.value = uri
                 }
             } catch (e: Exception) {
@@ -310,6 +364,15 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             customName = "IDCAM_${System.currentTimeMillis()}",
             format = settings.imageFormat
         )
+        lastCapturedCleanBitmap = combined
+        lastCaptureIsIdMode = true
+        lastCaptureTimestamp = timestampText
+        lastCaptureAddress = gpsAddress
+        lastCaptureCoords = gpsCoords
+        lastCaptureLat = loc?.latitude
+        lastCaptureLng = loc?.longitude
+        lastCaptureCustomText = _customText.value
+        _previewImageUri.value = uri
         _navigationToPreview.value = uri
     }
 
@@ -357,6 +420,15 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             customName = "DiviCam_${System.currentTimeMillis()}",
             format = settings.imageFormat
         )
+        lastCapturedCleanBitmap = bitmap
+        lastCaptureIsIdMode = false
+        lastCaptureTimestamp = timestampText
+        lastCaptureAddress = gpsAddress
+        lastCaptureCoords = gpsCoords
+        lastCaptureLat = loc?.latitude
+        lastCaptureLng = loc?.longitude
+        lastCaptureCustomText = _customText.value
+        _previewImageUri.value = uri
         _navigationToPreview.value = uri
     }
 
@@ -416,12 +488,85 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                         customName = "DiviCam_${System.currentTimeMillis()}",
                         format = settings.imageFormat
                     )
+                    lastCapturedCleanBitmap = normalized
+                    lastCaptureIsIdMode = false
+                    lastCaptureTimestamp = DateTimeUtils.formatTimestamp(Date(), settings.dateFormat, settings.isTimeFormat24h)
+                    val locImport = _locationData.value
+                    lastCaptureAddress = if (locImport != null) locImport.address else "Location unavailable"
+                    lastCaptureCoords = if (locImport != null) locImport.formattedCoordinates else "Coordinates unavailable"
+                    lastCaptureLat = locImport?.latitude
+                    lastCaptureLng = locImport?.longitude
+                    lastCaptureCustomText = _customText.value
+                    _previewImageUri.value = uri
                     _navigationToPreview.value = uri
                 }
             } catch (e: Exception) {
                 Log.e("CameraViewModel", "Error saving imported single photo", e)
             } finally {
                 _isCapturing.value = false
+            }
+        }
+    }
+
+    /**
+     * Re-stamps the latest captured photo with a user-adjusted stamp and/or map size scale.
+     * Fulfills "option for stamped size after taking photo".
+     */
+    fun restampPhoto(newStampScale: Float, newMapScale: Float? = null) {
+        val clean = lastCapturedCleanBitmap ?: return
+        viewModelScope.launch {
+            _isRestamping.value = true
+            try {
+                withContext(Dispatchers.Default) {
+                    _currentStampScale.value = newStampScale
+                    settings.stampSizeScale = newStampScale
+                    if (newMapScale != null) {
+                        _currentMapScale.value = newMapScale
+                        settings.mapSizeScale = newMapScale
+                    }
+
+                    val loc = _locationData.value
+                    val isId = lastCaptureIsIdMode
+
+                    val stamped = ImageProcessor.stampWatermark(
+                        image = clean,
+                        customText = lastCaptureCustomText,
+                        timestamp = lastCaptureTimestamp,
+                        gpsAddress = lastCaptureAddress,
+                        gpsCoords = lastCaptureCoords,
+                        textColorName = settings.textColor,
+                        positionName = settings.timestampPosition,
+                        showCoords = settings.showGpsCoords,
+                        showAddress = settings.showGpsAddress,
+                        showMiniMap = settings.showMiniMap,
+                        miniMapOpacity = settings.miniMapOpacity,
+                        latitude = lastCaptureLat ?: loc?.latitude,
+                        longitude = lastCaptureLng ?: loc?.longitude,
+                        miniMapPositionName = settings.miniMapPosition,
+                        enableAllStamps = settings.enableAllStamps,
+                        showBrandingBadge = settings.showBrandingBadge,
+                        mapBorderEnabled = if (isId) false else settings.mapBorderEnabled,
+                        mapTransparentBg = settings.mapTransparentBg,
+                        stampBgOpacity = settings.stampBackgroundOpacity,
+                        stampBorderEnabled = settings.stampBorderEnabled,
+                        stampSizeScale = newStampScale,
+                        mapSizeScale = newMapScale ?: _currentMapScale.value,
+                        isIdMode = isId
+                    )
+
+                    val prefix = if (isId) "IDCAM" else "DiviCam"
+                    val uri = galleryRepository.saveBitmapToGallery(
+                        bitmap = stamped,
+                        quality = settings.photoQuality,
+                        customName = "${prefix}_${System.currentTimeMillis()}",
+                        format = settings.imageFormat
+                    )
+                    _previewImageUri.value = uri
+                }
+            } catch (e: Exception) {
+                Log.e("CameraViewModel", "Error restamping photo", e)
+            } finally {
+                _isRestamping.value = false
             }
         }
     }

@@ -127,15 +127,15 @@ object ImageProcessor {
         val width = workingBitmap.width
         val height = workingBitmap.height
 
-        // Calculate dynamic sizes based on width (~1.35% width, adjusted by user size scale)
-        // In ID card mode, automatically apply a compact 0.65x multiplier so stamps never obscure card data
-        val modeScale = if (isIdMode) 0.65f else 1.0f
-        val effectiveScale = (stampSizeScale * modeScale).coerceIn(0.25f, 2.5f)
+        // Calculate dynamic sizes based on width (~2.2% width, adjusted by user size scale)
+        // In ID card mode, comfortably scaled so data and stamps are clearly legible
+        val modeScale = if (isIdMode) 0.90f else 1.0f
+        val effectiveScale = (stampSizeScale * modeScale).coerceIn(0.25f, 2.8f)
 
-        val baseSize = (width * 0.0135f * effectiveScale).coerceAtLeast(14f)
-        val largeTextSize = baseSize * 1.15f // For date/time
-        val regularTextSize = baseSize * 0.90f // For GPS & custom text
-        val badgeTextSize = baseSize * 0.72f // For DiviCam branding badge
+        val baseSize = (width * 0.022f * effectiveScale).coerceAtLeast(22f)
+        val largeTextSize = baseSize * 1.18f // For date/time
+        val regularTextSize = baseSize * 0.92f // For GPS & custom text
+        val badgeTextSize = baseSize * 0.74f // For DiviCam branding badge
 
         val colorValue = when (textColorName.lowercase()) {
             "cyan" -> Color.parseColor("#38BDF8")
@@ -228,8 +228,8 @@ object ImageProcessor {
             }
         }
 
-        val effectiveMapScale = (if (isIdMode) 0.65f else 1.0f) * mapSizeScale.coerceIn(0.25f, 2.5f)
-        val mapSize = (width * 0.12f * effectiveMapScale).coerceAtLeast(60f) // Sleek, non-intrusive map size
+        val effectiveMapScale = (if (isIdMode) 0.90f else 1.0f) * mapSizeScale.coerceIn(0.25f, 2.8f)
+        val mapSize = (width * 0.22f * effectiveMapScale).coerceAtLeast(120f) // Clearly visible, rich map size
 
         // 1. Draw Text Watermark PILL with support for all 9 screen positions
         if (lines.isNotEmpty()) {
@@ -446,11 +446,16 @@ object ImageProcessor {
         val boxLeft = (screenWidth - boxWidth) / 2f
         val boxTop = (screenHeight - boxHeight) / 2.2f
 
-        // When bitmap is already screen-sized (e.g. from PreviewView instant capture)
-        val (imgLeft, imgTop, imgWidth, imgHeight) = if (kotlin.math.abs(camW - screenWidth) < 2f && kotlin.math.abs(camH - screenHeight) < 2f) {
+        // Exact mapping from screen coordinates to bitmap pixel coordinates
+        val (imgLeft, imgTop, imgWidth, imgHeight) = if (kotlin.math.abs(camW - screenWidth) < 10f && kotlin.math.abs(camH - screenHeight) < 10f) {
+            // Direct viewfinder screen grab
             listOf(boxLeft, boxTop, boxWidth, boxHeight)
+        } else if (kotlin.math.abs((camW / camH) - (screenWidth / screenHeight)) < 0.05f) {
+            // Viewfinder aspect ratio
+            val scale = camW / screenWidth
+            listOf(boxLeft * scale, boxTop * scale, boxWidth * scale, boxHeight * scale)
         } else {
-            // Camera scale under PreviewView FILL_CENTER
+            // Camera sensor image mapped under PreviewView ScaleType.FILL_CENTER
             val scale = java.lang.Math.max(screenWidth / camW, screenHeight / camH)
             val scaledCamW = camW * scale
             val scaledCamH = camH * scale
@@ -465,15 +470,22 @@ object ImageProcessor {
             )
         }
 
-        val x = imgLeft.toInt().coerceIn(0, bitmap.width - 1)
-        val y = imgTop.toInt().coerceIn(0, bitmap.height - 1)
-        val w = imgWidth.toInt().coerceIn(1, bitmap.width - x)
-        val h = imgHeight.toInt().coerceIn(1, bitmap.height - y)
+        // Add 3% safety margin around card frame so what you see is what you get without tight border clipping
+        val marginX = imgWidth * 0.03f
+        val marginY = imgHeight * 0.03f
+
+        val safeLeft = (imgLeft - marginX).toInt().coerceIn(0, bitmap.width - 1)
+        val safeTop = (imgTop - marginY).toInt().coerceIn(0, bitmap.height - 1)
+        val safeRight = (imgLeft + imgWidth + marginX).toInt().coerceIn(safeLeft + 1, bitmap.width)
+        val safeBottom = (imgTop + imgHeight + marginY).toInt().coerceIn(safeTop + 1, bitmap.height)
+
+        val w = (safeRight - safeLeft).coerceAtLeast(1)
+        val h = (safeBottom - safeTop).coerceAtLeast(1)
 
         return try {
-            Bitmap.createBitmap(bitmap, x, y, w, h)
+            Bitmap.createBitmap(bitmap, safeLeft, safeTop, w, h)
         } catch (e: Exception) {
-            Log.e("ImageProcessor", "Failed to crop image", e)
+            Log.e("ImageProcessor", "Failed to crop ID image", e)
             bitmap
         }
     }
