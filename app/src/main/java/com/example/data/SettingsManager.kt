@@ -39,16 +39,21 @@ class SettingsManager(context: Context) {
         const val KEY_IMAGE_RESOLUTION = "image_resolution"
         const val KEY_SHUTTER_MODE = "shutter_mode"
         const val KEY_STAMP_SIZE_SCALE = "stamp_size_scale"
-        const val SHUTTER_MODE_INSTANT = "Instant (Zero-Lag)"
+        const val KEY_MAP_SIZE_SCALE = "map_size_scale"
         const val SHUTTER_MODE_SENSOR = "Sensor (Full Quality)"
+        const val SHUTTER_MODE_INSTANT = "Instant (Zero-Lag)"
     }
 
     var stampSizeScale: Float
         get() = prefs.getFloat(KEY_STAMP_SIZE_SCALE, 1.0f)
         set(value) = prefs.edit().putFloat(KEY_STAMP_SIZE_SCALE, value).apply()
 
+    var mapSizeScale: Float
+        get() = prefs.getFloat(KEY_MAP_SIZE_SCALE, 1.0f)
+        set(value) = prefs.edit().putFloat(KEY_MAP_SIZE_SCALE, value).apply()
+
     var shutterMode: String
-        get() = prefs.getString(KEY_SHUTTER_MODE, SHUTTER_MODE_INSTANT) ?: SHUTTER_MODE_INSTANT
+        get() = prefs.getString(KEY_SHUTTER_MODE, SHUTTER_MODE_SENSOR) ?: SHUTTER_MODE_SENSOR
         set(value) = prefs.edit().putString(KEY_SHUTTER_MODE, value).apply()
 
     var imageFormat: String
@@ -168,7 +173,7 @@ class SettingsManager(context: Context) {
         set(value) = prefs.edit().putInt(KEY_PHOTO_QUALITY, value).apply()
 
     var cameraMode: String
-        get() = prefs.getString(KEY_CAMERA_MODE, "ID") ?: "ID"
+        get() = prefs.getString(KEY_CAMERA_MODE, "SINGLE") ?: "SINGLE"
         set(value) = prefs.edit().putString(KEY_CAMERA_MODE, value).apply()
 
     fun getAllColors(): List<String> = listOf("White", "Cyan", "Yellow", "Gold", "Black")

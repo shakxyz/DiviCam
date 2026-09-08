@@ -73,12 +73,15 @@ import kotlinx.coroutines.withContext
 @Composable
 fun CombineTwoPhotosDialog(
     onDismiss: () -> Unit,
-    onCombinePhotos: (Bitmap, Bitmap, Boolean) -> Unit
+    onCombinePhotos: (Bitmap, Bitmap, Boolean) -> Unit,
+    onStampSinglePhoto: (Bitmap, Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    var selectedTab by remember { mutableStateOf(0) } // 0: 2-in-1 Dual, 1: 1 Single Photo
     var photo1Uri by remember { mutableStateOf<Uri?>(null) }
     var photo2Uri by remember { mutableStateOf<Uri?>(null) }
+    var singlePhotoUri by remember { mutableStateOf<Uri?>(null) }
     var applyWatermark by remember { mutableStateOf(true) }
     var isProcessing by remember { mutableStateOf(false) }
 
@@ -103,6 +106,12 @@ fun CombineTwoPhotosDialog(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) photo2Uri = uri
+    }
+
+    val pickSingleLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) singlePhotoUri = uri
     }
 
     Dialog(
@@ -148,13 +157,13 @@ fun CombineTwoPhotosDialog(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "Combine 2 Photos",
+                                text = if (selectedTab == 0) "Combine 2 Photos" else "Stamp Single Photo",
                                 color = Color.White,
                                 fontSize = 17.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "DiviCam 2-in-1 Dual Document",
+                                text = if (selectedTab == 0) "2-in-1 Dual Document" else "Gallery Photo Importer",
                                 color = Color(0xFF38BDF8),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -172,175 +181,283 @@ fun CombineTwoPhotosDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Fast pick 2 photos button
+                // Mode Tabs (2-in-1 vs Single Photo)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
+                        .clip(RoundedCornerShape(12.dp))
                         .background(Color(0xFF1E293B))
-                        .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.25f), RoundedCornerShape(10.dp))
-                        .clickable {
-                            pickMultipleLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        }
-                        .padding(vertical = 10.dp, horizontal = 14.dp)
-                        .testTag("pick_2_photos_together_button"),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.AddPhotoAlternate,
-                        contentDescription = null,
-                        tint = Color(0xFF38BDF8),
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (selectedTab == 0) Color(0xFF0284C7) else Color.Transparent)
+                            .clickable { selectedTab = 0 }
+                            .padding(vertical = 8.dp)
+                            .testTag("tab_combine_2_photos"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "2-in-1 Dual Photos",
+                            color = if (selectedTab == 0) Color.White else Color(0xFF94A3B8),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(if (selectedTab == 1) Color(0xFF0284C7) else Color.Transparent)
+                            .clickable { selectedTab = 1 }
+                            .padding(vertical = 8.dp)
+                            .testTag("tab_single_photo_stamp"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "1 Single Photo",
+                            color = if (selectedTab == 1) Color.White else Color(0xFF94A3B8),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                if (selectedTab == 0) {
+                    // FAST PICK 2 PHOTOS BUTTON
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFF1E293B))
+                            .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.25f), RoundedCornerShape(10.dp))
+                            .clickable {
+                                pickMultipleLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                            .padding(vertical = 10.dp, horizontal = 14.dp)
+                            .testTag("pick_2_photos_together_button"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AddPhotoAlternate,
+                            contentDescription = null,
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Select 2 Photos from Gallery at Once",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Photo 1 Slot (Front)
                     Text(
-                        text = "Select 2 Photos from Gallery at Once",
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
+                        text = "PHOTO 1 (TOP / FRONT)",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.fillMaxWidth()
                     )
-                }
+                    Spacer(modifier = Modifier.height(6.dp))
 
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Photo 1 Slot (Front)
-                Text(
-                    text = "PHOTO 1 (TOP / FRONT)",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF1E293B))
-                        .border(
-                            1.dp,
-                            if (photo1Uri != null) Color(0xFF10B981) else Color.White.copy(alpha = 0.1f),
-                            RoundedCornerShape(12.dp)
-                        )
-                        .clickable {
-                            pickPhoto1Launcher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(110.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF1E293B))
+                            .border(
+                                1.dp,
+                                if (photo1Uri != null) Color(0xFF10B981) else Color.White.copy(alpha = 0.1f),
+                                RoundedCornerShape(12.dp)
                             )
+                            .clickable {
+                                pickPhoto1Launcher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                            .testTag("slot_photo_1"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (photo1Uri != null) {
+                            AsyncImage(
+                                model = photo1Uri,
+                                contentDescription = "Photo 1 Preview",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(6.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.6f))
+                                    .clickable { photo1Uri = null }
+                                    .padding(4.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(16.dp))
+                            }
+                        } else {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(imageVector = Icons.Default.Photo, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(26.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Tap to select Top Photo", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                            }
                         }
-                        .testTag("slot_photo_1"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (photo1Uri != null) {
-                        AsyncImage(
-                            model = photo1Uri,
-                            contentDescription = "Photo 1 Preview",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(6.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.6f))
-                                .clickable { photo1Uri = null }
-                                .padding(4.dp)
-                        ) {
-                            Icon(imageVector = Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(16.dp))
+                    }
+
+                    // Swap Button
+                    IconButton(
+                        onClick = {
+                            val temp = photo1Uri
+                            photo1Uri = photo2Uri
+                            photo2Uri = temp
+                        },
+                        modifier = Modifier
+                            .padding(vertical = 4.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF1E293B))
+                            .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.3f), CircleShape)
+                            .size(34.dp)
+                            .testTag("swap_photos_button")
+                    ) {
+                        Icon(imageVector = Icons.Default.SwapVert, contentDescription = "Swap Photos", tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                    }
+
+                    // Photo 2 Slot (Back)
+                    Text(
+                        text = "PHOTO 2 (BOTTOM / BACK)",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(110.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF1E293B))
+                            .border(
+                                1.dp,
+                                if (photo2Uri != null) Color(0xFF10B981) else Color.White.copy(alpha = 0.1f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .clickable {
+                                pickPhoto2Launcher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                            .testTag("slot_photo_2"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (photo2Uri != null) {
+                            AsyncImage(
+                                model = photo2Uri,
+                                contentDescription = "Photo 2 Preview",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(6.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.6f))
+                                    .clickable { photo2Uri = null }
+                                    .padding(4.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(16.dp))
+                            }
+                        } else {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(imageVector = Icons.Default.Photo, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(26.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Tap to select Bottom Photo", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                            }
                         }
-                    } else {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(imageVector = Icons.Default.Photo, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(28.dp))
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("Tap to select Top Photo", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                    }
+                } else {
+                    // SINGLE PHOTO SLOT
+                    Text(
+                        text = "SELECT PHOTO TO STAMP OR SAVE",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(190.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF1E293B))
+                            .border(
+                                1.dp,
+                                if (singlePhotoUri != null) Color(0xFF10B981) else Color.White.copy(alpha = 0.1f),
+                                RoundedCornerShape(14.dp)
+                            )
+                            .clickable {
+                                pickSingleLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            }
+                            .testTag("slot_single_photo"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (singlePhotoUri != null) {
+                            AsyncImage(
+                                model = singlePhotoUri,
+                                contentDescription = "Selected Photo",
+                                contentScale = ContentScale.Fit,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(8.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.6f))
+                                    .clickable { singlePhotoUri = null }
+                                    .padding(6.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(18.dp))
+                            }
+                        } else {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(imageVector = Icons.Default.AddPhotoAlternate, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(36.dp))
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Tap to choose photo from Gallery", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Can save stamped or clean without stamps", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                            }
                         }
                     }
                 }
 
-                // Swap Button
-                IconButton(
-                    onClick = {
-                        val temp = photo1Uri
-                        photo1Uri = photo2Uri
-                        photo2Uri = temp
-                    },
-                    modifier = Modifier
-                        .padding(vertical = 4.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF1E293B))
-                        .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.3f), CircleShape)
-                        .size(36.dp)
-                        .testTag("swap_photos_button")
-                ) {
-                    Icon(imageVector = Icons.Default.SwapVert, contentDescription = "Swap Photos", tint = Color(0xFF38BDF8), modifier = Modifier.size(20.dp))
-                }
-
-                // Photo 2 Slot (Back)
-                Text(
-                    text = "PHOTO 2 (BOTTOM / BACK)",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF1E293B))
-                        .border(
-                            1.dp,
-                            if (photo2Uri != null) Color(0xFF10B981) else Color.White.copy(alpha = 0.1f),
-                            RoundedCornerShape(12.dp)
-                        )
-                        .clickable {
-                            pickPhoto2Launcher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                            )
-                        }
-                        .testTag("slot_photo_2"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (photo2Uri != null) {
-                        AsyncImage(
-                            model = photo2Uri,
-                            contentDescription = "Photo 2 Preview",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(6.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.6f))
-                                .clickable { photo2Uri = null }
-                                .padding(4.dp)
-                        ) {
-                            Icon(imageVector = Icons.Default.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(16.dp))
-                        }
-                    } else {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(imageVector = Icons.Default.Photo, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(28.dp))
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("Tap to select Bottom Photo", color = Color(0xFF94A3B8), fontSize = 12.sp)
-                        }
-                    }
-                }
-
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Apply watermark toggle
+                // Apply watermark toggle (stamped vs clean without stamp)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -351,8 +468,17 @@ fun CombineTwoPhotosDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Apply DiviCam Watermark & GPS", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        Text("Adds timestamp, GPS coords & brand badge", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                        Text(
+                            text = if (applyWatermark) "Apply Stamps & GPS (Stamped)" else "Save Clean (Without Stamps)",
+                            color = if (applyWatermark) Color(0xFF38BDF8) else Color(0xFFCBD5E1),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = if (applyWatermark) "Adds GPS, date/time, accurate map" else "Saves original pristine photo",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 11.sp
+                        )
                     }
                     Switch(
                         checked = applyWatermark,
@@ -365,47 +491,86 @@ fun CombineTwoPhotosDialog(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
-                // Combine & Save Action Button
-                val canCombine = (photo1Uri != null && photo2Uri != null && !isProcessing)
+                // Action Button
+                if (selectedTab == 0) {
+                    val canCombine = (photo1Uri != null && photo2Uri != null && !isProcessing)
 
-                Button(
-                    onClick = {
-                        val u1 = photo1Uri ?: return@Button
-                        val u2 = photo2Uri ?: return@Button
-                        isProcessing = true
+                    Button(
+                        onClick = {
+                            val u1 = photo1Uri ?: return@Button
+                            val u2 = photo2Uri ?: return@Button
+                            isProcessing = true
 
-                        coroutineScope.launch {
-                            val b1 = withContext(Dispatchers.IO) { loadBitmapFromUri(context, u1) }
-                            val b2 = withContext(Dispatchers.IO) { loadBitmapFromUri(context, u2) }
+                            coroutineScope.launch {
+                                val b1 = withContext(Dispatchers.IO) { loadBitmapFromUri(context, u1) }
+                                val b2 = withContext(Dispatchers.IO) { loadBitmapFromUri(context, u2) }
 
-                            if (b1 != null && b2 != null) {
-                                onCombinePhotos(b1, b2, applyWatermark)
-                                onDismiss()
-                            } else {
-                                Toast.makeText(context, "Could not load selected images", Toast.LENGTH_SHORT).show()
-                                isProcessing = false
+                                if (b1 != null && b2 != null) {
+                                    onCombinePhotos(b1, b2, applyWatermark)
+                                    onDismiss()
+                                } else {
+                                    Toast.makeText(context, "Could not load selected images", Toast.LENGTH_SHORT).show()
+                                    isProcessing = false
+                                }
                             }
-                        }
-                    },
-                    enabled = canCombine,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF0284C7),
-                        disabledContainerColor = Color(0xFF334155)
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp)
-                        .testTag("button_execute_combine")
-                ) {
-                    Text(
-                        text = if (isProcessing) "Combining Photos..." else "Combine & Save as One Photo",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (canCombine) Color.White else Color(0xFF94A3B8)
-                    )
+                        },
+                        enabled = canCombine,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF0284C7),
+                            disabledContainerColor = Color(0xFF334155)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                            .testTag("button_execute_combine")
+                    ) {
+                        Text(
+                            text = if (isProcessing) "Combining Photos..." else "Combine & Save as One Photo",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (canCombine) Color.White else Color(0xFF94A3B8)
+                        )
+                    }
+                } else {
+                    val canSaveSingle = (singlePhotoUri != null && !isProcessing)
+
+                    Button(
+                        onClick = {
+                            val u = singlePhotoUri ?: return@Button
+                            isProcessing = true
+
+                            coroutineScope.launch {
+                                val b = withContext(Dispatchers.IO) { loadBitmapFromUri(context, u) }
+                                if (b != null) {
+                                    onStampSinglePhoto(b, applyWatermark)
+                                    onDismiss()
+                                } else {
+                                    Toast.makeText(context, "Could not load image", Toast.LENGTH_SHORT).show()
+                                    isProcessing = false
+                                }
+                            }
+                        },
+                        enabled = canSaveSingle,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF0284C7),
+                            disabledContainerColor = Color(0xFF334155)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                            .testTag("button_execute_single_save")
+                    ) {
+                        Text(
+                            text = if (isProcessing) "Processing Photo..." else if (applyWatermark) "Stamp & Save Photo" else "Save Clean (No Stamps)",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (canSaveSingle) Color.White else Color(0xFF94A3B8)
+                        )
+                    }
                 }
             }
         }

@@ -454,7 +454,7 @@ fun CameraScreen(
                     else -> Alignment.TopEnd
                 }
 
-                val currentScale = viewModel.settings.stampSizeScale.coerceIn(0.5f, 1.8f)
+                val currentScale = viewModel.settings.mapSizeScale.coerceIn(0.4f, 2.2f)
                 val mapSizeDp = (84 * currentScale).dp
 
                 Box(
@@ -472,6 +472,8 @@ fun CameraScreen(
                         longitude = locationData!!.longitude,
                         opacity = viewModel.settings.miniMapOpacity,
                         sizeDp = mapSizeDp,
+                        hasBorder = viewModel.settings.mapBorderEnabled,
+                        transparentBg = viewModel.settings.mapTransparentBg,
                         modifier = Modifier.align(alignment)
                     )
                 }
@@ -1281,6 +1283,9 @@ fun CameraScreen(
             onDismiss = { showCombineDialog = false },
             onCombinePhotos = { photo1, photo2, applyStamps ->
                 viewModel.combineAndSaveTwoBitmaps(photo1, photo2, applyStamps)
+            },
+            onStampSinglePhoto = { photo, applyStamps ->
+                viewModel.stampAndSaveImportedSinglePhoto(photo, applyStamps)
             }
         )
     }
@@ -1292,6 +1297,8 @@ fun CornerMiniMap(
     longitude: Double,
     opacity: Float,
     sizeDp: androidx.compose.ui.unit.Dp = 90.dp,
+    hasBorder: Boolean = false,
+    transparentBg: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -1308,7 +1315,11 @@ fun CornerMiniMap(
             .size(sizeDp)
             .alpha(opacity)
             .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
-            .background(Color(0xFF0F172A).copy(alpha = 0.85f)),
+            .background(if (transparentBg) Color.Transparent else Color(0xFF0F172A).copy(alpha = 0.85f))
+            .then(
+                if (hasBorder) Modifier.border(1.dp, Color.White.copy(alpha = 0.35f), androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                else Modifier
+            ),
         contentAlignment = Alignment.Center
     ) {
         coil.compose.AsyncImage(

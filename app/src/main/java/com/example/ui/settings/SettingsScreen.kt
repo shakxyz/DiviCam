@@ -103,6 +103,7 @@ fun SettingsScreen(
     var stampBackgroundOpacity by remember { mutableFloatStateOf(settingsManager.stampBackgroundOpacity) }
     var stampBorderEnabled by remember { mutableStateOf(settingsManager.stampBorderEnabled) }
     var stampSizeScale by remember { mutableFloatStateOf(settingsManager.stampSizeScale) }
+    var mapSizeScale by remember { mutableFloatStateOf(settingsManager.mapSizeScale) }
     var showBrandingBadge by remember { mutableStateOf(settingsManager.showBrandingBadge) }
     var imageFormat by remember { mutableStateOf(settingsManager.imageFormat) }
     var imageResolution by remember { mutableStateOf(settingsManager.imageResolution) }
@@ -205,6 +206,8 @@ fun SettingsScreen(
                             stampBorderEnabled = false
                             settingsManager.stampSizeScale = 1.0f
                             stampSizeScale = 1.0f
+                            settingsManager.mapSizeScale = 1.0f
+                            mapSizeScale = 1.0f
                             showBrandingBadge = true
                         },
                         modifier = Modifier.testTag("reset_settings_button")
@@ -548,6 +551,88 @@ fun SettingsScreen(
                                     inactiveTrackColor = Color.White.copy(alpha = 0.15f)
                                 ),
                                 modifier = Modifier.fillMaxWidth().testTag("slider_minimap_opacity")
+                            )
+                        }
+
+                        // Mini-Map Size & Scale
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text("Mini-Map Size & Scale", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("Adjust mini-map dimensions on live preview and saved photo.", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                                }
+                                Text(
+                                    text = "${(mapSizeScale * 100).toInt()}%",
+                                    color = Color(0xFF38BDF8),
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            // Presets
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    "Tiny" to 0.6f,
+                                    "Small" to 0.8f,
+                                    "Normal" to 1.0f,
+                                    "Large" to 1.3f,
+                                    "Max" to 1.6f
+                                ).forEach { (label, scale) ->
+                                    val isSelected = kotlin.math.abs(mapSizeScale - scale) < 0.05f
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(if (isSelected) Color(0xFF38BDF8) else Color(0xFF1E293B))
+                                            .border(
+                                                1.dp,
+                                                if (isSelected) Color(0xFF38BDF8) else Color.White.copy(alpha = 0.08f),
+                                                RoundedCornerShape(6.dp)
+                                            )
+                                            .clickable {
+                                                mapSizeScale = scale
+                                                settingsManager.mapSizeScale = scale
+                                            }
+                                            .padding(vertical = 7.dp)
+                                            .testTag("preset_map_scale_$label"),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            color = if (isSelected) Color(0xFF0F172A) else Color.White,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
+
+                            Slider(
+                                value = mapSizeScale,
+                                onValueChange = {
+                                    mapSizeScale = it
+                                    settingsManager.mapSizeScale = it
+                                },
+                                valueRange = 0.4f..2.0f,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.White,
+                                    activeTrackColor = Color(0xFF38BDF8),
+                                    inactiveTrackColor = Color.White.copy(alpha = 0.15f)
+                                ),
+                                modifier = Modifier.fillMaxWidth().testTag("slider_minimap_size_scale")
                             )
                         }
 

@@ -114,6 +114,7 @@ object ImageProcessor {
         stampBgOpacity: Float = 0.45f,
         stampBorderEnabled: Boolean = false,
         stampSizeScale: Float = 1.0f,
+        mapSizeScale: Float = 1.0f,
         isIdMode: Boolean = false
     ): Bitmap {
         // If master stamp switch is disabled, return clean unedited photo
@@ -227,7 +228,8 @@ object ImageProcessor {
             }
         }
 
-        val mapSize = (width * 0.12f * effectiveScale).coerceAtLeast(80f) // Sleek, non-intrusive map size
+        val effectiveMapScale = (if (isIdMode) 0.65f else 1.0f) * mapSizeScale.coerceIn(0.25f, 2.5f)
+        val mapSize = (width * 0.12f * effectiveMapScale).coerceAtLeast(60f) // Sleek, non-intrusive map size
 
         // 1. Draw Text Watermark PILL with support for all 9 screen positions
         if (lines.isNotEmpty()) {
@@ -366,7 +368,20 @@ object ImageProcessor {
                 canvas.drawText("E", mapRight - (mapSize * 0.12f), centerValY + (mapSize * 0.025f), textPaint)
             }
 
-            // Target center ring & beacon dot in DiviCam Cyan
+            // Accurate GPS beacon marker positioning
+            val zoom = 15
+            val exactX = (longitude + 180.0) / 360.0 * (1 shl zoom)
+            val xTile = exactX.toInt()
+            val fracX = (exactX - xTile).toFloat().coerceIn(0.08f, 0.92f)
+
+            val latRad = latitude * Math.PI / 180.0
+            val exactY = (1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0 * (1 shl zoom)
+            val yTile = exactY.toInt()
+            val fracY = (exactY - yTile).toFloat().coerceIn(0.08f, 0.92f)
+
+            val pinX = mapLeft + (fracX * mapSize)
+            val pinY = mapTop + (fracY * mapSize)
+
             val targetPaint = Paint().apply {
                 color = Color.parseColor("#FF38BDF8")
                 style = Paint.Style.FILL
@@ -379,14 +394,12 @@ object ImageProcessor {
                 isAntiAlias = true
             }
 
-            val centerValX = mapLeft + mapSize / 2f
-            val centerValY = mapTop + mapSize / 2f
-            canvas.drawCircle(centerValX, centerValY, baseSize * 0.35f, targetRingPaint)
-            canvas.drawCircle(centerValX, centerValY, baseSize * 0.14f, targetPaint)
+            canvas.drawCircle(pinX, pinY, baseSize * 0.35f, targetRingPaint)
+            canvas.drawCircle(pinX, pinY, baseSize * 0.14f, targetPaint)
 
             canvas.restore()
 
-            // Map border outline: only if explicitly enabled (default is NO outline)
+            // Map border outline: only if explicitly enabled (default is false / NO outline)
             if (mapBorderEnabled) {
                 val borderPaint = Paint().apply {
                     color = Color.argb(60, 255, 255, 255)
@@ -427,24 +440,30 @@ object ImageProcessor {
         val camW = bitmap.width.toFloat()
         val camH = bitmap.height.toFloat()
 
-        // Card cutout geometry ratio on screen
+        // Card cutout geometry ratio on screen (matches GuideOverlay 1:1)
         val boxWidth = screenWidth * 0.82f
         val boxHeight = boxWidth / 1.585f
         val boxLeft = (screenWidth - boxWidth) / 2f
         val boxTop = (screenHeight - boxHeight) / 2.2f
 
-        // Camera scale (center crop FILL_CENTER)
-        val scale = java.lang.Math.max(screenWidth / camW, screenHeight / camH)
-        val scaledCamW = camW * scale
-        val scaledCamH = camH * scale
-        val offsetX = (screenWidth - scaledCamW) / 2f
-        val offsetY = (screenHeight - scaledCamH) / 2f
+        // When bitmap is already screen-sized (e.g. from PreviewView instant capture)
+        val (imgLeft, imgTop, imgWidth, imgHeight) = if (kotlin.math.abs(camW - screenWidth) < 2f && kotlin.math.abs(camH - screenHeight) < 2f) {
+            listOf(boxLeft, boxTop, boxWidth, boxHeight)
+        } else {
+            // Camera scale under PreviewView FILL_CENTER
+            val scale = java.lang.Math.max(screenWidth / camW, screenHeight / camH)
+            val scaledCamW = camW * scale
+            val scaledCamH = camH * scale
+            val offsetX = (screenWidth - scaledCamW) / 2f
+            val offsetY = (screenHeight - scaledCamH) / 2f
 
-        // Map box bounds from screen coords to camera image coords
-        val imgLeft = (boxLeft - offsetX) / scale
-        val imgTop = (boxTop - offsetY) / scale
-        val imgWidth = boxWidth / scale
-        val imgHeight = boxHeight / scale
+            listOf(
+                (boxLeft - offsetX) / scale,
+                (boxTop - offsetY) / scale,
+                boxWidth / scale,
+                boxHeight / scale
+            )
+        }
 
         val x = imgLeft.toInt().coerceIn(0, bitmap.width - 1)
         val y = imgTop.toInt().coerceIn(0, bitmap.height - 1)
@@ -487,18 +506,22 @@ object ImageProcessor {
         bitmap: Bitmap,
         screenWidth: Float,
         screenHeight: Float,
-        isFitCenter: Boolean = true
+        isFitCenter: Boolean = false
     ): Bitmap {
         if (screenWidth <= 0f || screenHeight <= 0f) {
             return bitmap
         }
-        // In FIT_CENTER mode, the entire camera sensor image is framed on screen without cropping
         if (isFitCenter) {
             return bitmap
         }
 
         val camW = bitmap.width.toFloat()
         val camH = bitmap.height.toFloat()
+
+        // If bitmap is already screen sized (instant viewfinder grab), return as is
+        if (kotlin.math.abs(camW - screenWidth) < 2f && kotlin.math.abs(camH - screenHeight) < 2f) {
+            return bitmap
+        }
 
         val scale = java.lang.Math.max(screenWidth / camW, screenHeight / camH)
         val scaledCamW = camW * scale

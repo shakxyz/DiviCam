@@ -231,11 +231,12 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                             miniMapPositionName = settings.miniMapPosition,
                             enableAllStamps = settings.enableAllStamps,
                             showBrandingBadge = settings.showBrandingBadge,
-                            mapBorderEnabled = settings.mapBorderEnabled,
+                            mapBorderEnabled = false, // Strictly borderless map for 2-in-1 combine
                             mapTransparentBg = settings.mapTransparentBg,
                             stampBgOpacity = settings.stampBackgroundOpacity,
                             stampBorderEnabled = settings.stampBorderEnabled,
                             stampSizeScale = settings.stampSizeScale,
+                            mapSizeScale = settings.mapSizeScale,
                             isIdMode = isId
                         )
                     } else {
@@ -298,6 +299,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             stampBgOpacity = settings.stampBackgroundOpacity,
             stampBorderEnabled = settings.stampBorderEnabled,
             stampSizeScale = settings.stampSizeScale,
+            mapSizeScale = settings.mapSizeScale,
             isIdMode = true
         )
 
@@ -344,6 +346,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             stampBgOpacity = settings.stampBackgroundOpacity,
             stampBorderEnabled = settings.stampBorderEnabled,
             stampSizeScale = settings.stampSizeScale,
+            mapSizeScale = settings.mapSizeScale,
             isIdMode = false
         )
 
@@ -355,6 +358,72 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
             format = settings.imageFormat
         )
         _navigationToPreview.value = uri
+    }
+
+    fun stampAndSaveImportedSinglePhoto(photo: Bitmap, applyStamps: Boolean = true) {
+        viewModelScope.launch {
+            _isCapturing.value = true
+            try {
+                withContext(Dispatchers.Default) {
+                    val maxDim = when (settings.imageResolution) {
+                        "Full Sensor" -> 4096
+                        "High" -> 2560
+                        else -> 1920
+                    }
+                    val normalized = ImageProcessor.normalizeResolution(photo, maxDim)
+                    val finalBitmap = if (applyStamps && settings.enableAllStamps) {
+                        val timestampText = DateTimeUtils.formatTimestamp(
+                            Date(),
+                            settings.dateFormat,
+                            settings.isTimeFormat24h
+                        )
+                        val loc = _locationData.value
+                        val gpsAddress = if (loc != null) loc.address else "Location unavailable"
+                        val gpsCoords = if (loc != null) loc.formattedCoordinates else "Coordinates unavailable"
+
+                        ImageProcessor.stampWatermark(
+                            image = normalized,
+                            customText = _customText.value,
+                            timestamp = timestampText,
+                            gpsAddress = gpsAddress,
+                            gpsCoords = gpsCoords,
+                            textColorName = settings.textColor,
+                            positionName = settings.timestampPosition,
+                            showCoords = settings.showGpsCoords,
+                            showAddress = settings.showGpsAddress,
+                            showMiniMap = settings.showMiniMap,
+                            miniMapOpacity = settings.miniMapOpacity,
+                            latitude = loc?.latitude,
+                            longitude = loc?.longitude,
+                            miniMapPositionName = settings.miniMapPosition,
+                            enableAllStamps = settings.enableAllStamps,
+                            showBrandingBadge = settings.showBrandingBadge,
+                            mapBorderEnabled = false,
+                            mapTransparentBg = settings.mapTransparentBg,
+                            stampBgOpacity = settings.stampBackgroundOpacity,
+                            stampBorderEnabled = settings.stampBorderEnabled,
+                            stampSizeScale = settings.stampSizeScale,
+                            mapSizeScale = settings.mapSizeScale,
+                            isIdMode = false
+                        )
+                    } else {
+                        normalized
+                    }
+
+                    val uri = galleryRepository.saveBitmapToGallery(
+                        bitmap = finalBitmap,
+                        quality = settings.photoQuality,
+                        customName = "DiviCam_${System.currentTimeMillis()}",
+                        format = settings.imageFormat
+                    )
+                    _navigationToPreview.value = uri
+                }
+            } catch (e: Exception) {
+                Log.e("CameraViewModel", "Error saving imported single photo", e)
+            } finally {
+                _isCapturing.value = false
+            }
+        }
     }
 
     fun handleVideoFileRecorded(file: File) {
